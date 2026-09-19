@@ -16,6 +16,7 @@ import { findSimilarFailure } from "../memory/retrieval.js";
 import { recordApprovalCacheHit, recordRetryPrevented, recordToolGateBlock } from "../stats/savings.js";
 import { tr } from "../i18n.js";
 import { getActionKey, getUncertainField, isWriteLikeTool } from "../action-context.js";
+import { notifyAutomatic } from "../ui.js";
 
 
 /**
@@ -65,7 +66,7 @@ export function setupToolGate(pi: ExtensionAPI): void {
           tr("Change the approach or input before retrying; use /jev reset only after the cause is fixed.", "请先修改方法或输入再重试；仅在问题已修复后使用 /jev reset 清除熔断记录。"),
         );
       if (advisory) {
-        ctx.ui.notify(reason, "warning");
+        notifyAutomatic(ctx, reason, "warning");
         return;
       }
       recordRetryPrevented();
@@ -89,7 +90,7 @@ export function setupToolGate(pi: ExtensionAPI): void {
           recordRetryPrevented();
           return block(message);
         }
-        ctx.ui.notify(message, "warning");
+        notifyAutomatic(ctx, message, "warning");
       }
     }
 
@@ -107,7 +108,7 @@ export function setupToolGate(pi: ExtensionAPI): void {
 
       if (risk === "dangerous") {
         if (advisory) {
-          ctx.ui.notify(tr(
+          notifyAutomatic(ctx, tr(
             `[Jev advisory] Dangerous command detected but not blocked: ${command.slice(0, 300)}`,
             `[Jev 辅助提示] 检测到危险命令，但辅助模式不会拦截：${command.slice(0, 300)}`,
           ), "warning");
@@ -171,7 +172,7 @@ async function judgeUnknownTool(
       }
       if (policy === "deny") {
         if (config.toolGate.mode === "advisory") {
-          ctx.ui.notify(tr(
+          notifyAutomatic(ctx, tr(
             `[Jev advisory] Tool Gate recommends denying ${toolName}, but advisory mode will continue.`,
             `[Jev 辅助提示] 工具门控建议拒绝 ${toolName}，但辅助模式将继续执行。`,
           ), "warning");

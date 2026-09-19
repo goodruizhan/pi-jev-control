@@ -4,6 +4,16 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v0.5 静默决策副驾驶
+
+- **批量判断** — `jev_decide_batch` 在一次 Jev 请求中处理最多 8 个边界明确的选择题
+- **每轮预算** — 默认每轮最多请求决策副驾驶一次；相同输入可命中 5 轮缓存
+- **默认安静** — 自动通知默认为 `errors-only`；用户主动执行的 `/jev` 命令仍正常显示结果
+- **本地优先裁剪** — 请求 Jev 前先删除重复的只读调用，并截断超长只读结果
+- **跳过无效路由** — 未配置目标模型时，不再调用 Jev 做无实际作用的模型分级
+- **更安全的 GUI 路由** — 缓存低风险控件选择，高风险操作交还用户决定
+- **可验证收益** — `/jev savings` 同时显示 Jev token 成本、增加的延迟和预计净节省 token
+
 ## v0.4 运行可靠性优化
 
 - 在同一用户任务内复用已授权的 `write`/`edit` 路径
@@ -80,6 +90,9 @@ pi install git:github.com/goodruizhan/pi-jev-control
 {
   "enabled": true,
   "language": "zh-CN",
+  "ui": {
+    "notifications": "errors-only"
+  },
   "jev": {
     "model": "jev-latest",
     "timeoutMs": 4000
@@ -137,7 +150,18 @@ pi install git:github.com/goodruizhan/pi-jev-control
   },
   "guiRouter": {
     "enabled": true,
-    "confidenceThreshold": 0.70
+    "confidenceThreshold": 0.70,
+    "timeoutMs": 900,
+    "cacheTurns": 3
+  },
+  "decisionCopilot": {
+    "enabled": true,
+    "silent": true,
+    "maxCallsPerTurn": 1,
+    "maxQuestionsPerCall": 8,
+    "timeoutMs": 900,
+    "confidenceThreshold": 0.72,
+    "cacheTurns": 5
   }
 }
 ```
@@ -157,7 +181,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 
 ### 工具门控确认策略
 
-工具门控默认使用 `"mode": "advisory"`。辅助模式可以显示风险建议，但绝不会要求确认，也不会拦截工具调用。Pi 自身内置的安全确认属于另一套机制，仍可能出现。
+工具门控默认使用 `"mode": "advisory"`，绝不会要求确认，也不会拦截工具调用。默认 `ui.notifications: "errors-only"` 时，日常辅助提示保持静默。Pi 自身内置的安全确认属于另一套机制，仍可能出现。
 
 在当前会话中切换模式：
 
@@ -176,6 +200,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 - `jev_memory_search` — 使用 Jev 排序搜索本地记忆存储
 - `jev_review_check` — 判断代码改动是否需要审查（v0.3）
 - `jev_choose_ui_action` — 从候选项中选择最佳 UI 控件（v0.3）
+- `jev_decide_batch` — 在一次有界且带缓存的请求中处理 1～8 个明确选择题（v0.5）
 
 ## 命令
 

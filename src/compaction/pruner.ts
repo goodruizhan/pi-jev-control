@@ -422,15 +422,18 @@ export async function buildPruningPlan(
     decisions.set(g.groupId, "KEEP_RAW");
   }
 
-  // Step 3: Decide pruning for old groups
-  if (oldGroups.length > 0 && isJevAvailable()) {
-    const oldDecisions = await decidePruning(oldGroups, signal);
+  // Step 3: Resolve obvious cases locally; ask Jev only about ambiguous groups.
+  const local = buildDeterministicPruningDecisions(oldGroups, recentGroups);
+  for (const [id, dec] of local.decisions) decisions.set(id, dec);
+
+  if (local.unresolved.length > 0 && isJevAvailable()) {
+    const oldDecisions = await decidePruning(local.unresolved, signal);
     for (const [id, dec] of oldDecisions) {
       decisions.set(id, dec);
     }
   } else {
-    // No Jev or no old groups — keep all
-    for (const g of oldGroups) {
+    // No Jev or no ambiguous groups — keep unresolved groups.
+    for (const g of local.unresolved) {
       decisions.set(g.groupId, "KEEP_RAW");
     }
   }
@@ -476,4 +479,62 @@ export async function buildPruningPlan(
     estimatedCharsBefore,
     estimatedCharsAfter,
   };
+}
+
+/**
+ * Cheap, conservative pruning that runs before any network request.
+ * It never drops writes or failures. Repeated read-only lookups can be dropped,
+ * while very large read-only results can be truncated.
+ */
+export function buildDeterministicPruningDecisions(
+  oldGroups: ToolGroup[],
+  protectedGroups: ToolGroup[] = [],
+): { decisions: Map<string, PruningDecision>; unresolved: ToolGroup[] } {
+  const decisions = new Map<string, PruningDecision>();
+  const unresolved: ToolGroup[] = [];
+  const seenReads = new Set<string>();
+
+  for (const group of protectedGroups) {
+    if (!group.isError && isReadOnlyGroup(group)) seenReads.add(readSignature(group));
+  }
+
+  for (let index = oldGroups.length - 1; index >= 0; index -= 1) {
+    const group = oldGroups[index];
+    if (group.isError) {
+      decisions.set(group.groupId, "KEEP_RAW");
+      continue;
+    }
+    if (!isReadOnlyGroup(group)) {
+      unresolved.unshift(group);
+      continue;
+    }
+
+    const signature = readSignature(group);
+    if (seenReads.has(signature)) {
+      decisions.set(group.groupId, "DROP");
+      continue;
+    }
+    seenReads.add(signature);
+
+    if (group.charsBefore > 2500) {
+      decisions.set(group.groupId, "TRUNCATE");
+    } else {
+      unresolved.unshift(group);
+    }
+  }
+
+  return { decisions, unresolved };
+}
+
+function isReadOnlyGroup(group: ToolGroup): boolean {
+  const text = `${group.toolName} ${group.inputSummary}`.toLowerCase();
+  if (/\b(write|edit|delete|remove|move|copy|commit|push|install|apply_patch)\b/.test(text)) return false;
+  return /\b(read|grep|rg|find|ls|glob|search|status|diff|view|open)\b/.test(text);
+}
+
+function readSignature(group: ToolGroup): string {
+  return crypto.createHash("sha256")
+    .update(`${group.toolName}\n${group.inputSummary}`)
+    .digest("hex")
+    .slice(0, 20);
 }

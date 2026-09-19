@@ -9,6 +9,7 @@ import type { RouterResult } from "../types.js";
 import { SHORT_CONFIRMATIONS } from "../types.js";
 import { recordModelTierDecision } from "../stats/savings.js";
 import { tr } from "../i18n.js";
+import { notifyAutomatic } from "../ui.js";
 
 /**
  * Task Router — classifies incoming user tasks as cheap/medium/strong/unknown.
@@ -56,6 +57,7 @@ export async function routeTask(
 
   const config = loadConfig();
   if (!config.enabled || !config.router.enabled) return null;
+  if (config.router.mode === "set-model" && !hasConfiguredRouterTarget(config.router.models)) return null;
 
   // Check Jev availability — if unavailable, skip routing entirely
   if (!isJevAvailable()) return null;
@@ -99,6 +101,16 @@ export async function routeTask(
   return routerResult;
 }
 
+/** Skip a network classification when no configured model could consume it. */
+export function hasConfiguredRouterTarget(models: ReturnType<typeof loadConfig>["router"]["models"]): boolean {
+  return Object.values(models).some((model) =>
+    model.provider !== "REPLACE_ME" &&
+    model.model !== "REPLACE_ME" &&
+    model.provider.trim().length > 0 &&
+    model.model.trim().length > 0
+  );
+}
+
 /**
  * Setup the task router event handler.
  */
@@ -125,7 +137,7 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
 
     // Notify with tier (debug info)
     if (routerResult.confidence > 0) {
-      ctx.ui.notify(
+      notifyAutomatic(ctx,
         tr(
           `[Jev] Task tier: ${routerResult.tier} (confidence: ${routerResult.confidence.toFixed(2)})`,
           `[Jev] 任务等级：${routerResult.tier}（置信度：${routerResult.confidence.toFixed(2)}）`,

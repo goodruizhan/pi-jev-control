@@ -9,6 +9,7 @@ import { generateActionFingerprint } from "../jev/normalize.js";
 import { recordMemoryCreated } from "../stats/savings.js";
 import crypto from "node:crypto";
 import { tr } from "../i18n.js";
+import { notifyAutomatic } from "../ui.js";
 
 /**
  * Memory Gate — analyzes user input and tool results to determine
@@ -138,7 +139,7 @@ export async function analyzeUserInput(
   }
   recordMemoryCreated();
 
-  ctx.ui.notify(tr(
+  notifyAutomatic(ctx, tr(
     `[Jev Memory] Stored as ${memoryType} (durability: ${durableProb.toFixed(2)})`,
     `[Jev 记忆] 已保存为 ${memoryType}（持久度：${durableProb.toFixed(2)}）`,
   ), "info");

@@ -126,6 +126,7 @@ export interface JevStats {
   compactionRequests: number;
   reviewRequests: number;
   guiRequests: number;
+  decisionRequests: number;
 }
 
 // ── Configuration ───────────────────────────────────────────────────────
@@ -133,6 +134,9 @@ export interface JevStats {
 export interface JevControlConfig {
   enabled: boolean;
   language: "en" | "zh-CN";
+  ui: {
+    notifications: "errors-only" | "important" | "all";
+  };
   jev: {
     model: string;
     timeoutMs: number;
@@ -191,6 +195,17 @@ export interface JevControlConfig {
   guiRouter: {
     enabled: boolean;
     confidenceThreshold: number;
+    timeoutMs: number;
+    cacheTurns: number;
+  };
+  decisionCopilot: {
+    enabled: boolean;
+    silent: boolean;
+    maxCallsPerTurn: number;
+    maxQuestionsPerCall: number;
+    timeoutMs: number;
+    confidenceThreshold: number;
+    cacheTurns: number;
   };
 }
 
@@ -309,6 +324,10 @@ export interface SavingsStats {
   benignFailuresSkipped: number;
   approvalCacheHits: number;
   toolGateBlocks: number;
+  decisionCacheHits: number;
+  decisionBudgetSkips: number;
+  guiCacheHits: number;
+  guiRiskDeferrals: number;
   estimatedContextTokensSaved: number;
 }
 

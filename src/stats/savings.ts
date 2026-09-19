@@ -1,5 +1,6 @@
 import type { SavingsStats } from "../types.js";
 import { tr } from "../i18n.js";
+import { jevStats } from "./stats.js";
 
 /**
  * Savings Stats — estimated savings from Jev control layer.
@@ -23,6 +24,10 @@ export const savingsStats: SavingsStats = {
   benignFailuresSkipped: 0,
   approvalCacheHits: 0,
   toolGateBlocks: 0,
+  decisionCacheHits: 0,
+  decisionBudgetSkips: 0,
+  guiCacheHits: 0,
+  guiRiskDeferrals: 0,
   estimatedContextTokensSaved: 0,
 };
 
@@ -32,6 +37,10 @@ export function recordPruningPlanSkipped(): void { savingsStats.pruningPlansSkip
 export function recordBenignFailureSkipped(): void { savingsStats.benignFailuresSkipped += 1; }
 export function recordApprovalCacheHit(): void { savingsStats.approvalCacheHits += 1; }
 export function recordToolGateBlock(): void { savingsStats.toolGateBlocks += 1; }
+export function recordDecisionCacheHit(): void { savingsStats.decisionCacheHits += 1; }
+export function recordDecisionBudgetSkip(): void { savingsStats.decisionBudgetSkips += 1; }
+export function recordGUICacheHit(): void { savingsStats.guiCacheHits += 1; }
+export function recordGUIRiskDeferral(): void { savingsStats.guiRiskDeferrals += 1; }
 
 /**
  * Record that a context candidate was inspected.
@@ -107,6 +116,10 @@ export function resetSavings(): void {
   savingsStats.benignFailuresSkipped = 0;
   savingsStats.approvalCacheHits = 0;
   savingsStats.toolGateBlocks = 0;
+  savingsStats.decisionCacheHits = 0;
+  savingsStats.decisionBudgetSkips = 0;
+  savingsStats.guiCacheHits = 0;
+  savingsStats.guiRiskDeferrals = 0;
   savingsStats.estimatedContextTokensSaved = 0;
 }
 
@@ -114,6 +127,8 @@ export function resetSavings(): void {
  * Format savings stats for display.
  */
 export function formatSavings(): string {
+  const jevTokensSpent = jevStats.inputTokens + jevStats.outputTokens;
+  const netEstimatedTokensSaved = savingsStats.estimatedContextTokensSaved - jevTokensSpent;
   return tr(
     [
       `Savings Estimates (NOT actual API billing)`,
@@ -130,8 +145,15 @@ export function formatSavings(): string {
       `Benign Failures Skipped Locally: ${savingsStats.benignFailuresSkipped}`,
       `Approval Cache Hits: ${savingsStats.approvalCacheHits}`,
       `Tool Gate Blocks: ${savingsStats.toolGateBlocks}`,
+      `Decision Cache Hits: ${savingsStats.decisionCacheHits}`,
+      `Decision Budget Skips: ${savingsStats.decisionBudgetSkips}`,
+      `GUI Cache Hits: ${savingsStats.guiCacheHits}`,
+      `High-risk GUI Actions Deferred: ${savingsStats.guiRiskDeferrals}`,
       `Actual Context Chars Removed: ${savingsStats.toolResultCharsPruned + savingsStats.toolResultCharsTruncated}`,
       `Est. Context Tokens Saved: ${savingsStats.estimatedContextTokensSaved}`,
+      `Jev Tokens Spent: ${jevTokensSpent}`,
+      `Net Est. Tokens Saved: ${netEstimatedTokensSaved}`,
+      `Jev Latency Added: ${jevStats.totalLatencyMs}ms`,
     ].join("\n"),
     [
       `节省量估算（并非实际 API 计费）`,
@@ -148,8 +170,15 @@ export function formatSavings(): string {
       `本地跳过的良性失败：${savingsStats.benignFailuresSkipped}`,
       `授权缓存命中：${savingsStats.approvalCacheHits}`,
       `工具门控拦截：${savingsStats.toolGateBlocks}`,
+      `决策缓存命中：${savingsStats.decisionCacheHits}`,
+      `决策预算跳过：${savingsStats.decisionBudgetSkips}`,
+      `GUI 缓存命中：${savingsStats.guiCacheHits}`,
+      `已暂缓高风险 GUI 操作：${savingsStats.guiRiskDeferrals}`,
       `实际移除上下文字符：${savingsStats.toolResultCharsPruned + savingsStats.toolResultCharsTruncated}`,
       `预计节省上下文 Token：${savingsStats.estimatedContextTokensSaved}`,
+      `Jev 消耗 Token：${jevTokensSpent}`,
+      `预计净节省 Token：${netEstimatedTokensSaved}`,
+      `Jev 累计增加延迟：${jevStats.totalLatencyMs} 毫秒`,
     ].join("\n"),
   );
 }

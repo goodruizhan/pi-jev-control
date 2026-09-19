@@ -17,6 +17,7 @@ export const jevStats: JevStats = {
   compactionRequests: 0,
   reviewRequests: 0,
   guiRequests: 0,
+  decisionRequests: 0,
 };
 
 /**
@@ -56,6 +57,9 @@ export function recordRequest(module: string, inputTokens: number, outputTokens:
     case "gui":
       jevStats.guiRequests += 1;
       break;
+    case "decision":
+      jevStats.decisionRequests += 1;
+      break;
   }
 }
 
@@ -84,6 +88,7 @@ export function resetStats(): void {
   jevStats.compactionRequests = 0;
   jevStats.reviewRequests = 0;
   jevStats.guiRequests = 0;
+  jevStats.decisionRequests = 0;
 }
 
 /**
@@ -110,6 +115,7 @@ export function formatStats(): string {
       `  Compaction: ${jevStats.compactionRequests} calls`,
       `  Review Gate: ${jevStats.reviewRequests} calls`,
       `  GUI Action Router: ${jevStats.guiRequests} calls`,
+      `  Decision Copilot: ${jevStats.decisionRequests} calls`,
     ].join("\n"),
     [
       `Jev API 使用情况`,
@@ -125,6 +131,7 @@ export function formatStats(): string {
       `  上下文压缩：${jevStats.compactionRequests} 次`,
       `  审查门控：${jevStats.reviewRequests} 次`,
       `  GUI 操作路由：${jevStats.guiRequests} 次`,
+      `  决策副驾驶：${jevStats.decisionRequests} 次`,
     ].join("\n"),
   );
 }

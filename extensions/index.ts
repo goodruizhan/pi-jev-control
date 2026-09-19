@@ -22,6 +22,7 @@ import { setupContextHook, setupSessionBeforeCompact } from "../src/compaction/c
 import { clearEpochPlan, requestEpochPlan, resetEpoch, getEpochInfo } from "../src/compaction/epoch.js";
 import { setupReviewGate } from "../src/review/review-gate.js";
 import { setupGUIActionRouter } from "../src/gui/action-router.js";
+import { resetDecisionCopilot, setupDecisionCopilot } from "../src/decision/batch.js";
 
 
 /**
@@ -84,6 +85,9 @@ export default function (pi: ExtensionAPI) {
   // ── v0.3: GUI Action Router ──────────────────────────────────────
 
   setupGUIActionRouter(pi);
+
+  // Silent, bounded multi-question decision copilot
+  setupDecisionCopilot(pi);
 
   // ── Register /jev command ───────────────────────────────────────
 
@@ -244,6 +248,7 @@ export default function (pi: ExtensionAPI) {
         resetStats();
         resetSavings();
         resetEpoch();
+        resetDecisionCopilot();
         ctx.ui.notify(tr("State, stats, savings, and epoch reset.", "状态、统计、节省信息和压缩周期已重置。"), "info");
         return;
       }
@@ -337,7 +342,7 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     : "N/A";
 
   return [
-    `pi-jev-control v0.4.1`,
+    `pi-jev-control v0.5.0`,
     trFor(config.language, `Jev API: ${jevStatus}`, `Jev API：${jevStatus}`),
     trFor(config.language, `Language: ${config.language}`, `语言：简体中文（zh-CN）`),
     trFor(config.language, `Model: ${config.jev.model}`, `模型：${config.jev.model}`),
@@ -352,6 +357,8 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     trFor(config.language, `Compaction: ${onOff(config.compaction.enabled, config.language)} (epoch: ${epochStatus})`, `上下文压缩：${onOff(config.compaction.enabled, config.language)}（周期：${epochStatus}）`),
     trFor(config.language, `Review Gate: ${onOff(config.reviewGate.enabled, config.language)}`, `审查门控：${onOff(config.reviewGate.enabled, config.language)}`),
     trFor(config.language, `GUI Router: ${onOff(config.guiRouter.enabled, config.language)}`, `GUI 路由：${onOff(config.guiRouter.enabled, config.language)}`),
+    trFor(config.language, `Decision Copilot: ${onOff(config.decisionCopilot.enabled, config.language)} (max ${config.decisionCopilot.maxCallsPerTurn}/turn)`, `决策副驾驶：${onOff(config.decisionCopilot.enabled, config.language)}（每轮最多 ${config.decisionCopilot.maxCallsPerTurn} 次）`),
+    trFor(config.language, `Automatic notifications: ${config.ui.notifications}`, `自动通知：${config.ui.notifications}`),
     trFor(config.language, `Last routing: ${lastTier}`, `上次路由：${lastTier}`),
     trFor(config.language, `confidence: ${lastConfidence}`, `置信度：${lastConfidence}`),
     trFor(config.language, `Config: ${getConfigPath()}`, `配置文件：${getConfigPath()}`),

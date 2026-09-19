@@ -9,6 +9,9 @@ const CONFIG_PATH = path.join(os.homedir(), ".pi", "agent", "jev-control.json");
 const DEFAULT_CONFIG: JevControlConfig = {
   enabled: true,
   language: "en",
+  ui: {
+    notifications: "errors-only",
+  },
   jev: {
     model: "jev-latest",
     timeoutMs: 4000,
@@ -67,6 +70,17 @@ const DEFAULT_CONFIG: JevControlConfig = {
   guiRouter: {
     enabled: true,
     confidenceThreshold: 0.7,
+    timeoutMs: 900,
+    cacheTurns: 3,
+  },
+  decisionCopilot: {
+    enabled: true,
+    silent: true,
+    maxCallsPerTurn: 1,
+    maxQuestionsPerCall: 8,
+    timeoutMs: 900,
+    confidenceThreshold: 0.72,
+    cacheTurns: 5,
   },
 };
 

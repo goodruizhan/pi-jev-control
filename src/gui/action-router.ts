@@ -5,6 +5,20 @@ import { choice } from "@typesafe-ai/sdk";
 import type { Questions } from "@typesafe-ai/sdk";
 import type { UIActionCandidate } from "../types.js";
 import { tr } from "../i18n.js";
+import crypto from "node:crypto";
+import { recordGUICacheHit, recordGUIRiskDeferral } from "../stats/savings.js";
+
+export interface UIActionResult {
+  id: string;
+  confidence: number;
+  risk: "low" | "needs_user";
+  cached?: boolean;
+}
+
+const uiCache = new Map<string, { turn: number; result: UIActionResult }>();
+let uiTurn = 0;
+
+const HIGH_RISK_GOAL = /\b(password|credential|login|sign in|payment|purchase|buy|delete|publish|send|submit|transfer)\b|密码|凭据|登录|支付|购买|删除|发布|发送|提交|转账/i;
 
 /**
  * GUI Action Router — selects the best target from candidate UI controls.
@@ -22,17 +36,21 @@ export async function chooseUIAction(
   goal: string,
   candidates: UIActionCandidate[],
   signal?: AbortSignal,
-): Promise<{ id: string; confidence: number }> {
+): Promise<UIActionResult> {
   const config = loadConfig();
   if (!config.enabled || !config.guiRouter.enabled) {
-    return { id: "unknown", confidence: 0 };
+    return { id: "unknown", confidence: 0, risk: "low" };
+  }
+  if (HIGH_RISK_GOAL.test(goal)) {
+    recordGUIRiskDeferral();
+    return { id: "unknown", confidence: 1, risk: "needs_user" };
   }
   if (!isJevAvailable()) {
-    return { id: "unknown", confidence: 0 };
+    return { id: "unknown", confidence: 0, risk: "low" };
   }
 
   if (candidates.length === 0) {
-    return { id: "unknown", confidence: 0 };
+    return { id: "unknown", confidence: 0, risk: "low" };
   }
 
   // Use generated option keys instead of untrusted candidate IDs as object keys.
@@ -40,7 +58,16 @@ export async function chooseUIAction(
     .filter((candidate) => typeof candidate.id === "string" && candidate.id.trim().length > 0)
     .slice(0, 50);
   if (boundedCandidates.length === 0) {
-    return { id: "unknown", confidence: 0 };
+    return { id: "unknown", confidence: 0, risk: "low" };
+  }
+  const cacheKey = crypto.createHash("sha256")
+    .update(JSON.stringify({ goal: goal.slice(0, 300), candidates: boundedCandidates }))
+    .digest("hex")
+    .slice(0, 24);
+  const cached = uiCache.get(cacheKey);
+  if (cached && uiTurn - cached.turn <= config.guiRouter.cacheTurns) {
+    recordGUICacheHit();
+    return { ...cached.result, cached: true };
   }
   const choices: Record<string, null> = {};
   const optionToCandidate = new Map<string, UIActionCandidate>();
@@ -73,10 +100,11 @@ export async function chooseUIAction(
   const result = await callJev(state, questions, {
     module: "gui",
     signal,
+    timeoutMs: config.guiRouter.timeoutMs,
   });
 
   if (!result.ok) {
-    return { id: "unknown", confidence: 0 };
+    return { id: "unknown", confidence: 0, risk: "low" };
   }
 
   const choiceAnswer = result.result.answers.ui_action as { choice: string; confidence: number };
@@ -85,16 +113,27 @@ export async function chooseUIAction(
 
   // Check confidence threshold
   if (id === "unknown" || confidence < config.guiRouter.confidenceThreshold) {
-    return { id: "unknown", confidence: 0 };
+    return { id: "unknown", confidence: 0, risk: "low" };
   }
 
-  return { id, confidence };
+  const actionResult: UIActionResult = { id, confidence, risk: "low" };
+  uiCache.set(cacheKey, { turn: uiTurn, result: actionResult });
+  return actionResult;
 }
 
 /**
  * Setup the GUI Action Router — registers the jev_choose_ui_action tool.
  */
 export function setupGUIActionRouter(pi: ExtensionAPI): void {
+  pi.on("input", (event) => {
+    if (event.source === "extension") return;
+    uiTurn += 1;
+    const ttl = Math.max(0, loadConfig().guiRouter.cacheTurns);
+    for (const [key, entry] of uiCache) {
+      if (uiTurn - entry.turn > ttl) uiCache.delete(key);
+    }
+  });
+
   pi.registerTool({
     name: "jev_choose_ui_action",
     label: tr("Jev GUI Action Router", "Jev GUI 操作路由"),
@@ -151,31 +190,13 @@ export function setupGUIActionRouter(pi: ExtensionAPI): void {
 function formatGUIActionResult(
   goal: string,
   candidates: UIActionCandidate[],
-  result: { id: string; confidence: number },
+  result: UIActionResult,
 ): string {
-  const lines = [
-    tr("GUI Action Selection", "GUI 操作选择"),
-    tr(`Goal: "${goal}"`, `目标：“${goal}”`),
-    ``,
-  ];
-
-  if (result.id === "unknown") {
-    lines.push(tr("Result: UNKNOWN (insufficient confidence or Jev unavailable)", "结果：未知（置信度不足或 Jev 不可用）"));
-    lines.push(tr(`Candidates (${candidates.length}):`, `候选项（${candidates.length} 个）：`));
-    for (const c of candidates) {
-      lines.push(`  - ${c.id}: ${c.label ?? ""} ${c.description ?? ""}`.trim());
-    }
-  } else {
-    const matched = candidates.find((c) => c.id === result.id);
-    lines.push(tr(`Result: ${result.id}`, `结果：${result.id}`));
-    lines.push(tr(`Confidence: ${result.confidence.toFixed(2)}`, `置信度：${result.confidence.toFixed(2)}`));
-    if (matched) {
-      lines.push(tr(`Label: ${matched.label ?? "N/A"}`, `标签：${matched.label ?? "无"}`));
-      lines.push(tr(`Role: ${matched.role ?? "N/A"}`, `角色：${matched.role ?? "无"}`));
-      lines.push(tr(`Description: ${matched.description ?? "N/A"}`, `说明：${matched.description ?? "无"}`));
-    }
-    lines.push(``, tr("Action: Use the matched control with the GUI tool (Computer Use, UE MCP, etc.).", "操作：使用 GUI 工具（Computer Use、UE MCP 等）操作匹配的控件。"));
-  }
-
-  return lines.join("\n");
+  const matched = result.id === "unknown" ? undefined : candidates.find((candidate) => candidate.id === result.id);
+  return JSON.stringify({
+    goal: goal.slice(0, 120),
+    ...result,
+    label: matched?.label,
+    instruction: result.risk === "needs_user" ? "request_user_control" : result.id === "unknown" ? "inspect_ui_again" : "execute_with_gui_tool",
+  });
 }

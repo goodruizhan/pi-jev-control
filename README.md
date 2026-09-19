@@ -4,6 +4,16 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v0.5 Silent Decision Copilot
+
+- **Batch decisions** — `jev_decide_batch` resolves up to 8 bounded choice questions in one Jev request
+- **Per-turn budget** — one Decision Copilot request per turn by default; repeated inputs use a five-turn cache
+- **Quiet by default** — automatic notifications use `errors-only`; explicit `/jev` commands still show their results
+- **Local-first pruning** — duplicate read-only calls are dropped and large read-only results are truncated before Jev is consulted
+- **No-op routing removed** — model-tier classification is skipped when no target models are configured
+- **Safer GUI routing** — low-risk target selection is cached; high-risk actions return control to the user
+- **Measurable ROI** — `/jev savings` reports Jev token cost, added latency, and estimated net tokens saved
+
 ## v0.4 Runtime Reliability
 
 - Reuses an approved `write`/`edit` path within the same user task
@@ -80,6 +90,9 @@ Create `~/.pi/agent/jev-control.json`:
 {
   "enabled": true,
   "language": "en",
+  "ui": {
+    "notifications": "errors-only"
+  },
   "jev": {
     "model": "jev-latest",
     "timeoutMs": 4000
@@ -137,7 +150,18 @@ Create `~/.pi/agent/jev-control.json`:
   },
   "guiRouter": {
     "enabled": true,
-    "confidenceThreshold": 0.70
+    "confidenceThreshold": 0.70,
+    "timeoutMs": 900,
+    "cacheTurns": 3
+  },
+  "decisionCopilot": {
+    "enabled": true,
+    "silent": true,
+    "maxCallsPerTurn": 1,
+    "maxQuestionsPerCall": 8,
+    "timeoutMs": 900,
+    "confidenceThreshold": 0.72,
+    "cacheTurns": 5
   }
 }
 ```
@@ -157,7 +181,7 @@ Internal decision values such as `allow`, `deny`, `cheap`, and `strong` remain u
 
 ### Tool Gate confirmation policy
 
-Tool Gate defaults to `"mode": "advisory"`. In advisory mode it can display risk recommendations, but it never asks for confirmation and never blocks a tool call. Pi's own built-in security confirmations are separate and may still appear.
+Tool Gate defaults to `"mode": "advisory"`. It never asks for confirmation or blocks a tool call. With the default `ui.notifications: "errors-only"`, routine advisory notices remain silent. Pi's own built-in security confirmations are separate and may still appear.
 
 Switch modes for the current session:
 
@@ -176,6 +200,7 @@ In `enforce` mode, `confirmOnLowConfidence` controls low-confidence prompts. Set
 - `jev_memory_search` — Search local memory store with Jev ranking
 - `jev_review_check` — Determine if code change needs review (v0.3)
 - `jev_choose_ui_action` — Select best UI control from candidates (v0.3)
+- `jev_decide_batch` — Resolve 1–8 explicit choice questions in one bounded, cached request (v0.5)
 
 ## Commands
 
