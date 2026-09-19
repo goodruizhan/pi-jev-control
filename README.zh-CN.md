@@ -83,7 +83,8 @@ pi install git:github.com/goodruizhan/pi-jev-control
   },
   "toolGate": {
     "enabled": true,
-    "useDeterministicFastPath": true
+    "useDeterministicFastPath": true,
+    "confirmOnLowConfidence": false
   },
   "retryJudge": {
     "enabled": true,
@@ -134,6 +135,10 @@ pi install git:github.com/goodruizhan/pi-jev-control
 ```
 
 为保持 API 兼容，`allow`、`deny`、`cheap`、`strong` 等内部决策值不会翻译。
+
+### 工具门控确认策略
+
+`toolGate.confirmOnLowConfidence` 默认为 `false`，低置信度的 Jev 决策将继续执行，不再反复弹出确认提示。确定性危险命令仍然需要确认，高置信度的明确拒绝仍会被拦截，Jev 不可用时仍会回退到手动确认。如需恢复之前的严格行为，可将其设为 `true`。
 
 ## 自定义工具
 

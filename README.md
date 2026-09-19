@@ -83,7 +83,8 @@ Create `~/.pi/agent/jev-control.json`:
   },
   "toolGate": {
     "enabled": true,
-    "useDeterministicFastPath": true
+    "useDeterministicFastPath": true,
+    "confirmOnLowConfidence": false
   },
   "retryJudge": {
     "enabled": true,
@@ -134,6 +135,10 @@ User-facing prompts, confirmations, status messages, and tool results support En
 ```
 
 Internal decision values such as `allow`, `deny`, `cheap`, and `strong` remain unchanged for API compatibility.
+
+### Tool Gate confirmation policy
+
+`toolGate.confirmOnLowConfidence` defaults to `false` for a smoother workflow. Low-confidence Jev decisions continue without prompting. Deterministically dangerous commands still require confirmation, high-confidence denials are still blocked, and unavailable Jev still falls back to manual confirmation. Set it to `true` for the stricter previous behavior.
 
 ## Custom Tools
 

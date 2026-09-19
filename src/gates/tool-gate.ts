@@ -107,6 +107,7 @@ async function judgeUnknownTool(
   toolInput: Record<string, unknown>,
   ctx: ExtensionContext,
 ) {
+  const config = loadConfig();
   const inputSummary = JSON.stringify(toolInput).slice(0, 1500);
 
   if (isJevAvailable()) {
@@ -125,9 +126,9 @@ async function judgeUnknownTool(
       const decision = normalizeToolGateDecision(answer.choice);
       const confidence = answer.confidence;
 
-      // High-risk allow decisions require stronger confidence than ordinary routing.
-      if (decision === "allow" && confidence >= 0.85) return;
-      if (decision === "deny" && confidence >= 0.7) {
+      const policy = resolveJevGatePolicy(decision, confidence, config.toolGate.confirmOnLowConfidence);
+      if (policy === "allow") return;
+      if (policy === "deny") {
         return { block: true, reason: tr("[Jev] Tool Gate denied this operation", "[Jev] 工具门控拒绝了此操作") };
       }
 
@@ -153,6 +154,17 @@ async function judgeUnknownTool(
     ),
     tr("Blocked — Jev unavailable and operation was not confirmed", "已阻止——Jev 不可用且操作未获得确认"),
   );
+}
+
+export function resolveJevGatePolicy(
+  decision: ToolGateDecision,
+  confidence: number,
+  confirmOnLowConfidence: boolean,
+): "allow" | "deny" | "confirm" {
+  // High-risk allow decisions require stronger confidence than ordinary routing.
+  if (decision === "allow" && confidence >= 0.85) return "allow";
+  if (decision === "deny" && confidence >= 0.7) return "deny";
+  return confirmOnLowConfidence ? "confirm" : "allow";
 }
 
 async function confirmOrBlock(

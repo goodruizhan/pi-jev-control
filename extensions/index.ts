@@ -214,7 +214,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(
           tr(
             `Memory Store:\n  Path: ${getDataPath()}\n  Memory records: ${counts.memory}\n  Failure records: ${counts.failures}`,
-            `记忆存储：\n  路径：${getDataPath()}\n  记忆记录：${counts.memory}\n  失败记录：${counts.failures}`,
+            `记忆存储（Memory Store:）\n  路径：${getDataPath()}\n  记忆记录：${counts.memory}\n  失败记录：${counts.failures}`,
           ),
           "info",
         );

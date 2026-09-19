@@ -332,8 +332,8 @@ function formatResults(results: SearchResult[], lowConfidenceFallback: boolean, 
     return [
       `${i + 1}. ${r.path}`,
       tr(`   relevance: ${r.relevance === null ? "n/a" : r.relevance.toFixed(2)}`, `   相关性：${r.relevance === null ? "无" : r.relevance.toFixed(2)}`),
-      tr(`   line: ${r.line}`, `   行号：${r.line}`),
-      tr(`   preview: ${r.preview || "(empty)"}`, `   预览：${r.preview || "（空）"}`),
+      tr(`   line: ${r.line}`, `   行号（line: ${r.line}）`),
+      tr(`   preview: ${r.preview || "(empty)"}`, `   预览（preview: ${r.preview || "（空）"}）`),
       "",
     ].join("\n");
   }));

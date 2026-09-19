@@ -136,6 +136,7 @@ export interface JevControlConfig {
   toolGate: {
     enabled: boolean;
     useDeterministicFastPath: boolean;
+    confirmOnLowConfidence: boolean;
   };
   retryJudge: {
     enabled: boolean;

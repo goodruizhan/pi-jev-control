@@ -27,6 +27,7 @@ const DEFAULT_CONFIG: JevControlConfig = {
   toolGate: {
     enabled: true,
     useDeterministicFastPath: true,
+    confirmOnLowConfidence: false,
   },
   retryJudge: {
     enabled: true,

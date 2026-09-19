@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test test/control.test.mjs test/context.test.mjs test/pruning.test.mjs i18n.test.mjs",
+    "test": "npm run build && node --test test/control.test.mjs test/context.test.mjs test/pruning.test.mjs i18n.test.mjs policy.test.mjs",
     "test:jev": "npm run build && node test/jev-smoke.mjs"
   },
   "dependencies": {
