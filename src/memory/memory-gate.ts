@@ -4,7 +4,9 @@ import { callJev, isJevAvailable } from "../jev/client.js";
 import { MEMORY_TYPE_QUESTION, MEMORY_DURABILITY_QUESTION } from "../jev/questions.js";
 import { normalizeMemoryType } from "../jev/normalize.js";
 import type { MemoryType, MemoryRecord } from "../types.js";
-import { appendMemory, appendFailure, getProjectHash } from "./store.js";
+import { appendMemory, appendFailure, getProjectHash, upsertFailure } from "./store.js";
+import { generateActionFingerprint } from "../jev/normalize.js";
+import { recordMemoryCreated } from "../stats/savings.js";
 import crypto from "node:crypto";
 
 /**
@@ -73,9 +75,11 @@ function detectDecision(text: string): boolean {
 export async function analyzeUserInput(
   text: string,
   ctx: ExtensionContext,
+  source?: string,
 ): Promise<void> {
   const config = loadConfig();
   if (!config.enabled || !config.memoryGate.enabled) return;
+  if (source === "extension") return;
 
   // Skip short confirmations and commands
   const trimmed = text.trim();
@@ -131,6 +135,7 @@ export async function analyzeUserInput(
   } else {
     appendMemory(record);
   }
+  recordMemoryCreated();
 
   ctx.ui.notify(`[Jev Memory] Stored as ${memoryType} (durability: ${durableProb.toFixed(2)})`, "info");
 }
@@ -161,9 +166,14 @@ export function storeFailureMemory(
     rawExcerpt: errorExcerpt.slice(0, 500),
     confidence: 0.8,
     source: "tool_result",
-    fingerprint: crypto.createHash("sha256").update(`${toolName}|${inputSummary}`).digest("hex").slice(0, 16),
+    fingerprint: generateActionFingerprint(toolName, inputSummary),
     resolved: false,
+    action: inputSummary,
+    result: errorExcerpt.slice(0, 500),
+    reason: `${failureType}:${recommendedAction}`,
+    retryCount: 1,
+    toolName,
   };
 
-  appendFailure(record);
+  if (upsertFailure(record)) recordMemoryCreated();
 }

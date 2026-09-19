@@ -1,9 +1,9 @@
 import type { MemoryRecord, MemoryType } from "../types.js";
 import { readAllMemory, readAllFailures } from "./store.js";
 import { callJev, isJevAvailable } from "../jev/client.js";
-import { CONTEXT_RELEVANCE_QUESTION } from "../jev/questions.js";
 import type { Questions } from "@typesafe-ai/sdk";
 import { noul } from "@typesafe-ai/sdk";
+import { generateActionFingerprint } from "../jev/normalize.js";
 
 /**
  * Memory Retrieval — search local memory store, then use Jev for relevance ranking.
@@ -31,7 +31,7 @@ export async function searchMemory(
   params: MemorySearchParams,
   signal?: AbortSignal,
 ): Promise<MemorySearchResult> {
-  const query = params.query.toLowerCase();
+  const query = params.query.trim().slice(0, 500).toLowerCase();
   const types = params.types;
   const limit = params.limit ?? 5;
 
@@ -96,9 +96,8 @@ async function rankWithJev(
   // Build Noul questions for each candidate
   const questions: Questions = {};
   for (let i = 0; i < candidates.length; i++) {
-    const r = candidates[i];
     questions[`rel_${i}`] = noul(
-      `Is this memory record relevant to the query: "${query}"? Record type: ${r.type}, summary: "${r.summary}"`,
+      `Is \`records[${i}]\` relevant evidence for \`query\`?`,
     );
   }
 
@@ -142,15 +141,12 @@ export function findSimilarFailure(
   inputSummary: string,
 ): MemoryRecord | undefined {
   const allFailures = readAllFailures();
-  const normalizedInput = inputSummary.toLowerCase().trim().replace(/\s+/g, " ");
+  const fingerprint = generateActionFingerprint(toolName, inputSummary);
 
   // Look for unresolved failures with similar action
   const matches = allFailures.filter((r) => {
     if (r.type !== "failure" || r.resolved) return false;
-    const recordText = (r.summary + " " + (r.rawExcerpt ?? "")).toLowerCase();
-    // Check if the input summary matches the record's action/summary
-    return normalizedInput.slice(0, 100).includes(recordText.slice(0, 50)) ||
-           recordText.includes(normalizedInput.slice(0, 50));
+    return r.fingerprint === fingerprint && (!r.toolName || r.toolName === toolName);
   });
 
   return matches[0];

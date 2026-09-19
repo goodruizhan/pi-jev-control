@@ -7,6 +7,7 @@ import { runtimeState } from "../state/runtime-state.js";
 import { routeModel } from "./model-router.js";
 import type { RouterResult } from "../types.js";
 import { SHORT_CONFIRMATIONS } from "../types.js";
+import { recordModelTierDecision } from "../stats/savings.js";
 
 /**
  * Task Router — classifies incoming user tasks as cheap/medium/strong/unknown.
@@ -60,7 +61,7 @@ export async function routeTask(
 
   // Build minimal state — only current task, no history
   const state = {
-    task: text.trim(),
+    task: text.trim().slice(0, 4000),
     domain: "software development with Pi; often Unreal Engine 5",
   };
 
@@ -109,13 +110,14 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
     // Update runtime state
     runtimeState.lastTaskTier = routerResult.tier;
     runtimeState.lastTaskConfidence = routerResult.confidence;
-    runtimeState.lastJevModel = "jev-latest";
+    runtimeState.lastJevModel = loadConfig().jev.model;
     runtimeState.lastDecision = {
       type: "task_tier",
       value: routerResult.tier,
       confidence: routerResult.confidence,
       timestamp: routerResult.timestamp,
     };
+    recordModelTierDecision();
 
     // Switch model based on tier
     await routeModel(pi, ctx, routerResult.tier);

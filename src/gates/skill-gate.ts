@@ -1,7 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
 import { callJev, isJevAvailable } from "../jev/client.js";
-import { SKILL_RELEVANCE_QUESTION } from "../jev/questions.js";
 import { Type } from "typebox";
 import { noul } from "@typesafe-ai/sdk";
 import type { Questions } from "@typesafe-ai/sdk";
@@ -22,14 +21,15 @@ interface SkillCandidate {
   name: string;
   description: string;
   path: string;
+  relevance: number | null;
 }
 
 // Directories to scan for skills
 const SKILL_DIRS = [
   path.join(os.homedir(), ".pi", "agent", "skills"),
   path.join(os.homedir(), ".agents", "skills"),
-  ".pi", "skills",
-  ".agents", "skills",
+  path.join(process.cwd(), ".pi", "skills"),
+  path.join(process.cwd(), ".agents", "skills"),
 ];
 
 /**
@@ -46,8 +46,14 @@ export function setupSkillGate(pi: ExtensionAPI): void {
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const config = loadConfig();
-      const query = params.query as string;
-      const maxResults = (params.maxResults as number | undefined) ?? config.skillGate.maxSelected;
+      if (!config.enabled || !config.skillGate.enabled) {
+        return {
+          content: [{ type: "text", text: "Jev Skill Gate is disabled." }],
+          details: {},
+        };
+      }
+      const query = (params.query as string).trim().slice(0, 500);
+      const maxResults = Math.min(20, Math.max(1, Math.floor((params.maxResults as number | undefined) ?? config.skillGate.maxSelected)));
 
       // Step 1: Discover skills
       const skills = discoverSkills();
@@ -61,17 +67,23 @@ export function setupSkillGate(pi: ExtensionAPI): void {
 
       // Step 2: Rank with Jev
       let ranked = skills;
+      let rankedByJev = false;
 
       if (isJevAvailable() && skills.length > 0) {
         try {
           ranked = await rankSkills(query, skills, signal);
+          rankedByJev = true;
         } catch {
           // Jev failed — return all skills
           ranked = skills;
         }
       }
 
-      // Limit results
+      if (rankedByJev) {
+        ranked = ranked.filter((skill) => (skill.relevance ?? 0) >= config.skillGate.relevanceThreshold);
+      }
+
+      // Limit results. When Jev is unavailable, preserve discovery order instead of pretending it was ranked.
       ranked = ranked.slice(0, maxResults);
 
       // Format output
@@ -90,9 +102,10 @@ export function setupSkillGate(pi: ExtensionAPI): void {
  */
 function discoverSkills(): SkillCandidate[] {
   const skills: SkillCandidate[] = [];
+  const seenPaths = new Set<string>();
 
   for (const dir of SKILL_DIRS) {
-    const absDir = path.isAbsolute(dir) ? dir : path.join(process.cwd(), ...dir.split("/"));
+    const absDir = path.resolve(dir);
     if (!fs.existsSync(absDir)) continue;
 
     try {
@@ -102,6 +115,8 @@ function discoverSkills(): SkillCandidate[] {
 
         const skillMdPath = path.join(absDir, entry.name, "SKILL.md");
         if (!fs.existsSync(skillMdPath)) continue;
+        const normalizedPath = path.resolve(skillMdPath).toLowerCase();
+        if (seenPaths.has(normalizedPath)) continue;
 
         try {
           const content = fs.readFileSync(skillMdPath, "utf-8");
@@ -112,7 +127,9 @@ function discoverSkills(): SkillCandidate[] {
             name,
             description,
             path: skillMdPath,
+            relevance: null,
           });
+          seenPaths.add(normalizedPath);
         } catch {
           // Skip unreadable files
         }
@@ -130,7 +147,7 @@ function discoverSkills(): SkillCandidate[] {
  */
 function extractDescription(content: string): string {
   // Try frontmatter description
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (fmMatch) {
     const descMatch = fmMatch[1].match(/description:\s*(.+)/);
     if (descMatch) {
@@ -167,7 +184,7 @@ async function rankSkills(
   const questions: Questions = {};
   for (let i = 0; i < skills.length; i++) {
     questions[`rel_${i}`] = noul(
-      `Is this skill useful for the task: "${query}"? Skill: "${skills[i].name}", Description: "${skills[i].description.slice(0, 200)}"`,
+      `Would loading \`skills[${i}]\` materially help complete \`task\`?`,
     );
   }
 
@@ -216,6 +233,7 @@ function formatSkills(query: string, skills: SkillCandidate[]): string {
 
   skills.forEach((s, i) => {
     lines.push(`${i + 1}. ${s.name}`);
+    lines.push(`   relevance: ${s.relevance === null ? "n/a" : s.relevance.toFixed(2)}`);
     lines.push(`   ${s.description.slice(0, 150)}`);
     lines.push(`   Path: ${s.path}`);
     lines.push(``);

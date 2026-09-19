@@ -4,7 +4,7 @@ import crypto from "node:crypto";
  * Result normalization utilities for Jev responses.
  */
 
-import type { TaskTier, FailureType, RecommendedAction, RouterResult, ToolGateDecision, AgentType, MemoryType } from "../types.js";
+import type { TaskTier, FailureType, RecommendedAction, RouterResult, ToolGateDecision, AgentType, MemoryType, ReviewDecision } from "../types.js";
 
 /**
  * Normalize a Jev choice to a valid TaskTier.
@@ -102,9 +102,43 @@ export function generateFailureSignature(toolName: string, inputSummary: string,
   return crypto.createHash("sha256").update(combined).digest("hex").slice(0, 16);
 }
 
+/** Stable fingerprint for a tool action, shared by runtime and persistent memory. */
+export function generateActionFingerprint(toolName: string, inputSummary: string): string {
+  const combined = `${toolName.toLowerCase().trim()}|${normalizeText(inputSummary)}`;
+  return crypto.createHash("sha256").update(combined).digest("hex").slice(0, 16);
+}
+
 /**
  * Normalize text for hashing: lowercase, trim, collapse whitespace.
  */
 function normalizeText(text: string): string {
   return text.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Normalize a Jev choice to a valid ReviewDecision.
+ */
+export function normalizeReviewDecision(choice: string): ReviewDecision {
+  const lower = choice.toLowerCase().trim().replace(/\s+/g, "_");
+  if (lower === "skip" || lower === "normal_review" || lower === "strong_review") {
+    return lower as ReviewDecision;
+  }
+  return "normal_review"; // default to normal review for unknown decisions
+}
+
+/**
+ * Normalize a Jev choice to a UI action candidate ID.
+ * Returns "unknown" if no valid match found.
+ */
+export function normalizeUIActionChoice(choice: string, candidateIds: string[]): string {
+  const lower = choice.toLowerCase().trim();
+  if (!lower || lower === "unknown" || lower === "none") return "unknown";
+  for (const id of candidateIds) {
+    if (id.toLowerCase() === lower) return id;
+  }
+  // Try partial match
+  for (const id of candidateIds) {
+    if (id.toLowerCase().includes(lower) || lower.includes(id.toLowerCase())) return id;
+  }
+  return "unknown";
 }

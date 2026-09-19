@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
 import { callJev, isJevAvailable } from "../jev/client.js";
 import { AGENT_TYPE_QUESTION } from "../jev/questions.js";
@@ -37,7 +37,14 @@ export function setupAgentRouter(pi: ExtensionAPI): void {
       query: Type.String({ description: "The task or goal" }),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const query = params.query as string;
+      const config = loadConfig();
+      if (!config.enabled || !config.agentRouter.enabled) {
+        return {
+          content: [{ type: "text", text: "Jev Agent Router is disabled." }],
+          details: {},
+        };
+      }
+      const query = (params.query as string).trim().slice(0, 1000);
 
       if (!isJevAvailable()) {
         return {

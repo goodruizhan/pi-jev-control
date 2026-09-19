@@ -32,23 +32,34 @@ const DEFAULT_CONFIG: JevControlConfig = {
     maxSameFailureRetries: 1,
   },
   contextGate: {
-    enabled: true,
+    enabled: false,
     maxCandidates: 40,
     maxSelected: 5,
     relevanceThreshold: 0.55,
   },
   skillGate: {
-    enabled: true,
+    enabled: false,
     maxSelected: 4,
+    relevanceThreshold: 0.55,
+  },
+  agentRouter: {
+    enabled: true,
   },
   memoryGate: {
-    enabled: true,
+    enabled: false,
   },
   compaction: {
     enabled: false,
     preserveRecentMessages: 8,
     minCharsToSave: 8000,
     minTurnsBetweenPlans: 20,
+  },
+  reviewGate: {
+    enabled: true,
+  },
+  guiRouter: {
+    enabled: true,
+    confidenceThreshold: 0.7,
   },
 };
 

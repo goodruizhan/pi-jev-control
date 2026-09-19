@@ -7,22 +7,22 @@ import type { ToolGateDecision } from "../types.js";
 import { SAFE_READONLY_TOOLS, SAFE_BASH_COMMANDS, DANGEROUS_BASH_PATTERNS } from "../types.js";
 import { getFailureCountByInput } from "../state/runtime-state.js";
 import { findSimilarFailure } from "../memory/retrieval.js";
+import { recordRetryPrevented } from "../stats/savings.js";
 
 
 /**
  * Tool Gate — intercepts tool_call events.
  *
  * Priority order:
- * 1. Deterministic safe readonly tools → allow
- * 2. Deterministic safe bash commands → allow
- * 3. Deterministic dangerous bash patterns → confirm/deny
- * 4. Repeated failure check → block if exceeding maxSameFailureRetries
+ * 1. Repeated failure check → block if exceeding maxSameFailureRetries
+ * 2. Deterministic safe readonly tools → allow
+ * 3. Deterministic safe shell commands → allow
+ * 4. Deterministic dangerous shell patterns → confirm/deny
  * 5. Uncertain operations → Jev decision
  *
  * Jev API failure fallback:
- * - Read-only tools → allow
- * - Clearly dangerous → confirm
- * - Unknown mutations → confirm (TUI) or block (non-TUI)
+ * - Only deterministic read-only fast paths are allowed
+ * - All other operations require confirmation (TUI) or are blocked (non-TUI)
  */
 
 export function setupToolGate(pi: ExtensionAPI): void {
@@ -32,156 +32,151 @@ export function setupToolGate(pi: ExtensionAPI): void {
 
     const toolName = event.toolName;
     const toolInput = event.input as Record<string, unknown>;
+    const inputSummary = JSON.stringify(toolInput).slice(0, 1500);
 
-    // ── 1. Safe readonly tools ────────────────────────────────────
-    if (SAFE_READONLY_TOOLS.has(toolName)) {
-      return; // allow
-    }
-
-    // ── 2. Bash tool handling ─────────────────────────────────────
-    if (toolName === "bash") {
-      const command = (toolInput.command as string) ?? "";
-
-      // Safe bash commands → allow
-      if (isSafeBashCommand(command)) {
-        return; // allow
-      }
-
-      // Dangerous bash patterns → confirm
-      if (isDangerousBashCommand(command)) {
-        // Check repeated failure protection
-        const inputSummary = command.slice(0, 1500);
-        const maxRetries = config.retryJudge.maxSameFailureRetries;
-        const failureCount = getFailureCountByInput(toolName, inputSummary);
-
-        if (failureCount >= maxRetries && maxRetries > 0) {
-          return {
-            block: true,
-            reason: `This action already failed ${failureCount} time(s). Change the approach or provide new evidence before retrying.`,
-          };
-        }
-
-        // Confirm with user
-        const confirmed = await ctx.ui.confirm(
-          "Dangerous Command",
-          `About to execute: ${command.slice(0, 200)}\n\nThis command may cause data loss. Allow?`,
-        );
-        if (!confirmed) {
-          return {
-            block: true,
-            reason: "Blocked by user — dangerous command not confirmed",
-          };
-        }
-        return; // allow
-      }
-
-      // ── 3. Repeated failure protection (runtime state) ───────────
-      const inputSummary = command.slice(0, 1500);
-      const maxRetries = config.retryJudge.maxSameFailureRetries;
-      const failureCount = getFailureCountByInput(toolName, inputSummary);
-
-      if (failureCount >= maxRetries && maxRetries > 0) {
-        return {
-          block: true,
-          reason: `This action already failed ${failureCount} time(s). Change the approach or provide new evidence before retrying.`,
-        };
-      }
-
-      // ── 3b. Check persistent failure memory ─────────────────────
-      if (config.memoryGate.enabled) {
-        const similarFailure = findSimilarFailure(toolName, inputSummary);
-        if (similarFailure && !similarFailure.resolved) {
-          return {
-            block: true,
-            reason: `Similar failure found in memory: ${similarFailure.summary}. \nThis failure is unresolved. Change the approach or resolve the previous issue first.`,
-          };
-        }
-      }
-
-      // ── 4. Uncertain bash → Jev ────────────────────────────────
-      if (config.toolGate.useDeterministicFastPath) {
-        // If Jev is available, ask Jev
-        if (isJevAvailable()) {
-          const state = {
-            tool: "bash",
-            command: command.slice(0, 500),
-            task_context: `bash command: ${command.slice(0, 200)}`,
-          };
-          const result = await callJev(state, { tool_gate: TOOL_GATE_QUESTION }, {
-            module: "toolGate",
-            signal: ctx.signal,
-          });
-
-          if (result.ok) {
-            const decision = normalizeToolGateDecision(result.result.answers.tool_gate.choice);
-            if (decision === "allow") return;
-            if (decision === "deny") {
-              return {
-                block: true,
-                reason: `[Jev] Tool Gate denied: ${result.result.answers.tool_gate.choice}`,
-              };
-            }
-            // confirm
-            const confirmed = await ctx.ui.confirm(
-              "Tool Gate Confirmation",
-              `Jev recommends confirmation for: ${command.slice(0, 200)}\n\nAllow?`,
-            );
-            if (!confirmed) {
-              return {
-                block: true,
-                reason: "Blocked by user — Jev recommended confirmation",
-              };
-            }
-            return; // allow after confirmation
-          }
-
-          // Jev failed — fall through to default
-        }
-
-        // Jev unavailable or failed — default behavior for bash:
-        // Only allow known safe patterns, otherwise confirm
-        // Since we already passed the safe check above, this is a moderate-risk command
-        // In v0.1, we let it through but log a note
-        // (v0.2 will add more granular rules)
-        return; // allow by default
-      }
-
-      return; // allow by default
-    }
-
-    // ── 5. Other tools ────────────────────────────────────────────
-    // For non-bash tools, check if they are known safe
-    if (SAFE_READONLY_TOOLS.has(toolName)) {
-      return; // allow
-    }
-
-    // Other tools (write, edit, subagent, etc.) — check repeated failures
-    const inputStr = JSON.stringify(toolInput);
+    // Repeated-failure protection applies before every allow fast path.
     const maxRetries = config.retryJudge.maxSameFailureRetries;
-    const failureCount = getFailureCountByInput(toolName, inputStr);
-
+    const failureCount = getFailureCountByInput(toolName, inputSummary);
     if (failureCount >= maxRetries && maxRetries > 0) {
+      recordRetryPrevented();
       return {
         block: true,
         reason: `This action already failed ${failureCount} time(s). Change the approach or provide new evidence before retrying.`,
       };
     }
 
-    // For other tools, allow by default (v0.2 will add Jev for uncertain tools)
+    if (config.memoryGate.enabled) {
+      const similarFailure = findSimilarFailure(toolName, inputSummary);
+      if (similarFailure && !similarFailure.resolved) {
+        recordRetryPrevented();
+        return {
+          block: true,
+          reason: `Similar unresolved failure found in memory: ${similarFailure.summary}. Change the approach or resolve the previous issue first.`,
+        };
+      }
+    }
+
+    // ── 1. Safe readonly tools ────────────────────────────────────
+    if (config.toolGate.useDeterministicFastPath && SAFE_READONLY_TOOLS.has(toolName)) {
+      return; // allow
+    }
+
+    // ── 2. Shell tool handling ─────────────────────────────────────
+    if (toolName === "bash" || toolName === "powershell") {
+      const command = (toolInput.command as string) ?? "";
+      const risk = classifyShellCommand(command);
+
+      if (risk === "safe" && config.toolGate.useDeterministicFastPath) return;
+
+      if (risk === "dangerous") {
+        return confirmOrBlock(
+          ctx,
+          "Dangerous Command",
+          `About to execute: ${command.slice(0, 300)}\n\nThis command may cause data loss. Allow?`,
+          "Blocked — dangerous command was not explicitly confirmed",
+        );
+      }
+    }
+
+    // ── 3. Every unknown or mutating tool is Jev-gated ────────────
+    return judgeUnknownTool(toolName, toolInput, ctx);
   });
+}
+
+type ShellRisk = "safe" | "dangerous" | "uncertain";
+
+/** Classify a complete shell command. Safe fast paths never accept composition. */
+export function classifyShellCommand(command: string): ShellRisk {
+  if (isDangerousBashCommand(command)) return "dangerous";
+  if (isSafeBashCommand(command)) return "safe";
+  return "uncertain";
+}
+
+async function judgeUnknownTool(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  ctx: ExtensionContext,
+) {
+  const inputSummary = JSON.stringify(toolInput).slice(0, 1500);
+
+  if (isJevAvailable()) {
+    const result = await callJev(
+      {
+        tool: toolName,
+        input_summary: inputSummary,
+        mutates_or_has_side_effects: !SAFE_READONLY_TOOLS.has(toolName),
+      },
+      { tool_gate: TOOL_GATE_QUESTION },
+      { module: "toolGate", signal: ctx.signal },
+    );
+
+    if (result.ok) {
+      const answer = result.result.answers.tool_gate;
+      const decision = normalizeToolGateDecision(answer.choice);
+      const confidence = answer.confidence;
+
+      // High-risk allow decisions require stronger confidence than ordinary routing.
+      if (decision === "allow" && confidence >= 0.85) return;
+      if (decision === "deny" && confidence >= 0.7) {
+        return { block: true, reason: "[Jev] Tool Gate denied this operation" };
+      }
+
+      return confirmOrBlock(
+        ctx,
+        "Tool Gate Confirmation",
+        `Jev did not produce a high-confidence allow decision for ${toolName}.\n\nInput: ${inputSummary.slice(0, 300)}\n\nAllow?`,
+        "Blocked — uncertain or mutating operation was not confirmed",
+      );
+    }
+  }
+
+  // Fail closed: unavailable/failed Jev never silently authorizes an unknown mutation.
+  return confirmOrBlock(
+    ctx,
+    "Tool Gate Confirmation",
+    `Jev is unavailable. Confirm this unknown or mutating tool call manually.\n\nTool: ${toolName}\nInput: ${inputSummary.slice(0, 300)}`,
+    "Blocked — Jev unavailable and operation was not confirmed",
+  );
+}
+
+async function confirmOrBlock(
+  ctx: ExtensionContext,
+  title: string,
+  message: string,
+  reason: string,
+) {
+  try {
+    const confirmed = await ctx.ui.confirm(title, message);
+    if (confirmed) return;
+  } catch {
+    // Headless/non-interactive contexts cannot confirm, so block.
+  }
+  return { block: true, reason };
 }
 
 /**
  * Check if a bash command matches known safe patterns.
  * Uses explicit prefix matching, not includes().
  */
-function isSafeBashCommand(command: string): boolean {
+export function isSafeBashCommand(command: string): boolean {
   const trimmed = command.trim();
 
+  // Reject chaining, redirection, command substitution, and multi-line commands.
+  if (/[;&|<>`\r\n]/.test(trimmed) || trimmed.includes("$(")) return false;
+
+  // Shell find can execute or delete; the built-in Pi find tool remains safe.
+  if (/^find(?:\s|$)/i.test(trimmed)) return false;
+
+  // These options can execute a helper or write output despite a read-like command name.
+  if (/^rg(?:\s|$)/i.test(trimmed) && /(?:^|\s)--pre(?:=|\s)/i.test(trimmed)) return false;
+  if (/^git\s+(?:diff|log)(?:\s|$)/i.test(trimmed) && /(?:^|\s)(?:--output(?:=|\s)|--ext-diff\b|--textconv\b)/i.test(trimmed)) return false;
+
   for (const safe of SAFE_BASH_COMMANDS) {
-    if (trimmed === safe) return true;
-    if (trimmed.startsWith(safe + " ")) return true;
-    if (trimmed.startsWith(safe + "\t")) return true;
+    const lower = trimmed.toLowerCase();
+    const safeLower = safe.toLowerCase();
+    if (lower === safeLower) return true;
+    if (lower.startsWith(safeLower + " ")) return true;
+    if (lower.startsWith(safeLower + "\t")) return true;
   }
 
   return false;
@@ -190,7 +185,7 @@ function isSafeBashCommand(command: string): boolean {
 /**
  * Check if a bash command matches known dangerous patterns.
  */
-function isDangerousBashCommand(command: string): boolean {
+export function isDangerousBashCommand(command: string): boolean {
   const trimmed = command.trim();
   for (const pattern of DANGEROUS_BASH_PATTERNS) {
     if (pattern.test(trimmed)) return true;

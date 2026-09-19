@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, getConfigPath } from "../src/config.js";
 import { runtimeState, resetState } from "../src/state/runtime-state.js";
 import { resetStats, formatStats } from "../src/stats/stats.js";
+import { resetSavings, formatSavings } from "../src/stats/savings.js";
 import { isJevAvailable, getUnavailableReason } from "../src/jev/client.js";
 import { setupTaskRouter } from "../src/router/task-router.js";
 import { setupToolGate } from "../src/gates/tool-gate.js";
@@ -10,15 +11,20 @@ import { setupContextGate } from "../src/gates/context-gate.js";
 import { setupSkillGate } from "../src/gates/skill-gate.js";
 import { setupAgentRouter } from "../src/router/agent-router.js";
 import { analyzeUserInput } from "../src/memory/memory-gate.js";
-import { searchMemory, findSimilarFailure } from "../src/memory/retrieval.js";
-import { clearAllMemory, getMemoryCount, getDataPath } from "../src/memory/store.js";
+import { searchMemory } from "../src/memory/retrieval.js";
+import { clearAllMemory, getMemoryCount, getDataPath, markFailureResolved } from "../src/memory/store.js";
 import { callJev } from "../src/jev/client.js";
 import { choice } from "@typesafe-ai/sdk";
 import { Type } from "typebox";
+// v0.3 imports
+import { setupContextHook, setupSessionBeforeCompact } from "../src/compaction/context-hook.js";
+import { clearEpochPlan, requestEpochPlan, resetEpoch, getEpochInfo } from "../src/compaction/epoch.js";
+import { setupReviewGate } from "../src/review/review-gate.js";
+import { setupGUIActionRouter } from "../src/gui/action-router.js";
 
 
 /**
- * pi-dev-control — Jev-powered control layer for Pi Coding Agent
+ * pi-jev-control — Jev-powered control layer for Pi Coding Agent
  *
  * v0.2: Task Router, Model Router, Tool Gate, Failure Classifier, Retry Judge, Stats,
  *        Context Gate (jev_search_code), Skill Gate (jev_select_skills),
@@ -59,6 +65,22 @@ export default function (pi: ExtensionAPI) {
 
   // Memory Gate (input event for constraint/decision detection)
   setupMemoryGate(pi);
+
+  // ── v0.3: Compaction ─────────────────────────────────────────────
+
+  // Context Hook (context event — pruning)
+  setupContextHook(pi);
+
+  // Session Before Compact (ensure memory before Pi compacts)
+  setupSessionBeforeCompact(pi);
+
+  // ── v0.3: Review Gate ────────────────────────────────────────────
+
+  setupReviewGate(pi);
+
+  // ── v0.3: GUI Action Router ──────────────────────────────────────
+
+  setupGUIActionRouter(pi);
 
   // ── Register /jev command ───────────────────────────────────────
 
@@ -138,10 +160,21 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // /jev memory on|off — toggle Memory Gate
-      if (arg.startsWith("memory ")) {
+      if (arg.startsWith("agentrouter ")) {
         const action = arg.split(" ")[1];
-        toggleModule(action, "memoryGate", config, ctx);
+        toggleModule(action, "agentRouter", config, ctx);
+        return;
+      }
+
+      if (arg.startsWith("reviewgate ")) {
+        const action = arg.split(" ")[1];
+        toggleModule(action, "reviewGate", config, ctx);
+        return;
+      }
+
+      if (arg.startsWith("guirouter ")) {
+        const action = arg.split(" ")[1];
+        toggleModule(action, "guiRouter", config, ctx);
         return;
       }
 
@@ -149,6 +182,13 @@ export default function (pi: ExtensionAPI) {
       if (arg === "memory clear") {
         clearAllMemory();
         ctx.ui.notify("All memory records cleared.", "info");
+        return;
+      }
+
+      if (arg.startsWith("memory resolve ")) {
+        const id = arg.slice("memory resolve ".length).trim();
+        const resolved = id.length > 0 && markFailureResolved(id);
+        ctx.ui.notify(resolved ? `Failure ${id} marked resolved.` : `Failure ${id || "(missing id)"} not found.`, resolved ? "info" : "warning");
         return;
       }
 
@@ -165,18 +205,86 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      // /jev memory on|off — toggle Memory Gate (after exact memory commands)
+      if (arg.startsWith("memory ")) {
+        const action = arg.split(" ")[1];
+        toggleModule(action, "memoryGate", config, ctx);
+        return;
+      }
+
       // /jev reset — reset state and stats
       if (arg === "reset") {
         resetState();
         resetStats();
-        ctx.ui.notify("State and stats reset.", "info");
+        resetSavings();
+        resetEpoch();
+        ctx.ui.notify("State, stats, savings, and epoch reset.", "info");
+        return;
+      }
+
+      // ── v0.3: /jev compact commands ───────────────────────────
+
+      // /jev compact status — show epoch/compaction status
+      if (arg === "compact status") {
+        const info = getEpochInfo();
+        const config = loadConfig();
+        const status = [
+          `Compaction: ${config.compaction.enabled ? "ON" : "OFF"}`,
+          `Min turns between plans: ${config.compaction.minTurnsBetweenPlans}`,
+          `Min chars to save: ${config.compaction.minCharsToSave}`,
+          `Preserve recent messages: ${config.compaction.preserveRecentMessages}`,
+          ``,
+          `Epoch Plan: ${info.hasPlan ? "ACTIVE" : "NONE"}`,
+          `Epoch ID: ${info.epochId ?? "N/A"}`,
+          `Plan age: ${info.planAge} turn(s)`,
+          `Est. chars saved: ${info.estimatedSavedChars}`,
+        ].join("\n");
+        ctx.ui.notify(status, "info");
+        return;
+      }
+
+      // /jev compact plan — generate a new pruning plan
+      if (arg === "compact plan") {
+        ctx.ui.notify("Generating new pruning plan...", "info");
+        // We can't access the current messages directly from the command context
+        // The plan will be generated on the next context event
+        requestEpochPlan();
+        ctx.ui.notify("Plan will be regenerated on the next turn.", "info");
+        return;
+      }
+
+      // /jev compact clear — clear the pruning plan
+      if (arg === "compact clear") {
+        clearEpochPlan();
+        ctx.ui.notify("Pruning plan cleared. Next turn will use full history view.", "info");
+        return;
+      }
+
+      // /jev compact on|off — toggle compaction
+      if (arg.startsWith("compact ")) {
+        const action = arg.split(" ")[1];
+        if (action === "on" || action === "off") {
+          config.compaction.enabled = action === "on";
+          ctx.ui.notify(`Compaction: ${action.toUpperCase()}`, "info");
+          ctx.ui.notify("Note: Use /reload for persistent changes.", "info");
+        } else {
+          ctx.ui.notify(`Usage: /jev compact on|off|status|plan|clear`, "info");
+        }
+        return;
+      }
+
+      // ── v0.3: /jev savings — show savings stats ──────────────
+
+      // /jev savings — show savings estimates
+      if (arg === "savings") {
+        ctx.ui.notify(formatSavings(), "info");
         return;
       }
 
       // Unknown subcommand
       ctx.ui.notify(
         `Unknown /jev command: "${arg}"\n` +
-          `Available: status, probe, stats, last, router on|off, toolgate on|off, retry on|off, contextgate on|off, skillgate on|off, memory on|off, memory clear, memory stats, reset`,
+          `Available: status, probe, stats, savings, last, router/toolgate/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, compact on|off|status|plan|clear, reset`,
         "info",
       );
     },
@@ -193,7 +301,14 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
   const retryStatus = config.retryJudge.enabled ? "ON" : "OFF";
   const contextGateStatus = config.contextGate.enabled ? "ON" : "OFF";
   const skillGateStatus = config.skillGate.enabled ? "ON" : "OFF";
+  const agentRouterStatus = config.agentRouter.enabled ? "ON" : "OFF";
   const memoryStatus = config.memoryGate.enabled ? "ON" : "OFF";
+  const compactionStatus = config.compaction.enabled ? "ON" : "OFF";
+  const reviewGateStatus = config.reviewGate.enabled ? "ON" : "OFF";
+  const guiRouterStatus = config.guiRouter.enabled ? "ON" : "OFF";
+
+  const epochInfo = getEpochInfo();
+  const epochStatus = epochInfo.hasPlan ? `ACTIVE (${epochInfo.estimatedSavedChars} chars saved)` : "NO PLAN";
 
   const lastTier = runtimeState.lastTaskTier ?? "none";
   const lastConfidence = runtimeState.lastTaskConfidence !== undefined
@@ -201,7 +316,7 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     : "N/A";
 
   return [
-    `pi-dev-control v0.2.0`,
+    `pi-jev-control v0.3.0`,
     `Jev API: ${jevStatus}`,
     `Model: ${config.jev.model}`,
     `Timeout: ${config.jev.timeoutMs}ms`,
@@ -210,8 +325,11 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     `Retry Judge: ${retryStatus}`,
     `Context Gate: ${contextGateStatus}`,
     `Skill Gate: ${skillGateStatus}`,
+    `Agent Router: ${agentRouterStatus}`,
     `Memory Gate: ${memoryStatus}`,
-    `Compaction: NOT AVAILABLE IN v0.2`,
+    `Compaction: ${compactionStatus} (epoch: ${epochStatus})`,
+    `Review Gate: ${reviewGateStatus}`,
+    `GUI Router: ${guiRouterStatus}`,
     `Last routing: ${lastTier}`,
     `confidence: ${lastConfidence}`,
     `Config: ${getConfigPath()}`,
@@ -269,7 +387,7 @@ async function runProbe(ctx: import("@earendil-works/pi-coding-agent").Extension
 
 function toggleModule(
   action: string | undefined,
-  moduleName: "router" | "toolGate" | "retryJudge" | "contextGate" | "skillGate" | "memoryGate",
+  moduleName: "router" | "toolGate" | "retryJudge" | "contextGate" | "skillGate" | "agentRouter" | "memoryGate" | "reviewGate" | "guiRouter",
   config: ReturnType<typeof loadConfig>,
   ctx: import("@earendil-works/pi-coding-agent").ExtensionCommandContext,
 ): void {
@@ -280,14 +398,20 @@ function toggleModule(
     else if (moduleName === "retryJudge") config.retryJudge.enabled = action === "on";
     else if (moduleName === "contextGate") config.contextGate.enabled = action === "on";
     else if (moduleName === "skillGate") config.skillGate.enabled = action === "on";
+    else if (moduleName === "agentRouter") config.agentRouter.enabled = action === "on";
     else if (moduleName === "memoryGate") config.memoryGate.enabled = action === "on";
+    else if (moduleName === "reviewGate") config.reviewGate.enabled = action === "on";
+    else if (moduleName === "guiRouter") config.guiRouter.enabled = action === "on";
 
     const label = moduleName === "toolGate" ? "Tool Gate" :
                   moduleName === "retryJudge" ? "Retry Judge" :
                   moduleName === "contextGate" ? "Context Gate" :
-                  moduleName === "skillGate" ? "Skill Gate" :
-                  moduleName === "memoryGate" ? "Memory Gate" : "Task Router";
-    ctx.ui.notify(`${label}: ${action.toUpperCase()}`, "info");
+                   moduleName === "skillGate" ? "Skill Gate" :
+                   moduleName === "agentRouter" ? "Agent Router" :
+                   moduleName === "memoryGate" ? "Memory Gate" : "Task Router";
+    const finalLabel = moduleName === "reviewGate" ? "Review Gate" :
+                       moduleName === "guiRouter" ? "GUI Router" : label;
+    ctx.ui.notify(`${finalLabel}: ${action.toUpperCase()}`, "info");
 
     // Note: /reload required for persistent changes
     ctx.ui.notify("Note: Use /reload for persistent changes.", "info");
@@ -301,7 +425,7 @@ function toggleModule(
 function setupMemoryGate(pi: ExtensionAPI): void {
   pi.on("input", async (event, ctx) => {
     // Analyze user input for memory-worthy content
-    await analyzeUserInput(event.text, ctx);
+    await analyzeUserInput(event.text, ctx, event.source);
   });
 }
 
@@ -318,6 +442,13 @@ function registerMemorySearchTool(pi: ExtensionAPI): void {
       limit: Type.Optional(Type.Number({ description: "Maximum results (default: 5)" })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const config = loadConfig();
+      if (!config.enabled || !config.memoryGate.enabled) {
+        return {
+          content: [{ type: "text", text: "Jev Memory Gate is disabled." }],
+          details: {},
+        };
+      }
       const query = params.query as string;
       const types = params.types as string[] | undefined;
       const limit = params.limit as number | undefined;
@@ -338,6 +469,7 @@ function registerMemorySearchTool(pi: ExtensionAPI): void {
 
       result.records.forEach((r, i) => {
         lines.push(`${i + 1}. [${r.type}] ${r.summary}`);
+        lines.push(`   id: ${r.id}`);
         lines.push(`   date: ${new Date(r.timestamp).toISOString().slice(0, 10)}`);
         lines.push(`   confidence: ${r.confidence.toFixed(2)}`);
         lines.push(`   source: ${r.source}`);

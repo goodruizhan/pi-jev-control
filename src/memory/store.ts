@@ -20,7 +20,7 @@ const BASE_DIR = path.join(os.homedir(), ".pi", "agent", "jev-control-data");
  */
 export function getProjectHash(cwd: string = process.cwd()): string {
   // Normalize: lowercase, remove trailing slashes, collapse paths
-  const normalized = cwd.toLowerCase().replace(/\/+$/, "");
+  const normalized = cwd.toLowerCase().replace(/[\\/]+$/, "");
   return crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
 }
 
@@ -60,6 +60,30 @@ export function appendFailure(record: MemoryRecord): void {
   const filePath = path.join(dir, "failures.jsonl");
   const line = JSON.stringify(record) + "\n";
   fs.appendFileSync(filePath, line, "utf-8");
+}
+
+/** Insert a new failure or update the existing unresolved record with the same action. */
+export function upsertFailure(record: MemoryRecord): boolean {
+  const dir = getProjectDir();
+  ensureDir(dir);
+  const filePath = path.join(dir, "failures.jsonl");
+  const records = readJsonl<MemoryRecord>(filePath);
+  const existing = records.find((item) => item.type === "failure" && !item.resolved && item.fingerprint === record.fingerprint);
+
+  if (existing) {
+    existing.timestamp = record.timestamp;
+    existing.summary = record.summary;
+    existing.rawExcerpt = record.rawExcerpt;
+    existing.result = record.result;
+    existing.reason = record.reason;
+    existing.retryCount = (existing.retryCount ?? 1) + 1;
+    existing.confidence = record.confidence;
+    fs.writeFileSync(filePath, records.map((item) => JSON.stringify(item)).join("\n") + "\n", "utf-8");
+    return false;
+  }
+
+  fs.appendFileSync(filePath, JSON.stringify(record) + "\n", "utf-8");
+  return true;
 }
 
 /**
@@ -105,19 +129,21 @@ function readJsonl<T>(filePath: string): T[] {
 /**
  * Mark a failure as resolved.
  */
-export function markFailureResolved(id: string): void {
+export function markFailureResolved(id: string): boolean {
   const dir = getProjectDir();
   const filePath = path.join(dir, "failures.jsonl");
-  if (!fs.existsSync(filePath)) return;
+  if (!fs.existsSync(filePath)) return false;
 
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     const lines = content.split("\n").filter((l) => l.trim());
+    let found = false;
     const updatedLines = lines.map((line) => {
       try {
         const record = JSON.parse(line) as MemoryRecord;
         if (record.id === id) {
           record.resolved = true;
+          found = true;
           return JSON.stringify(record);
         }
         return line;
@@ -126,8 +152,9 @@ export function markFailureResolved(id: string): void {
       }
     });
     fs.writeFileSync(filePath, updatedLines.join("\n") + "\n", "utf-8");
+    return found;
   } catch {
-    // Ignore errors
+    return false;
   }
 }
 

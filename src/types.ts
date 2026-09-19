@@ -1,4 +1,4 @@
-/** Shared type definitions for pi-dev-control */
+/** Shared type definitions for pi-jev-control */
 
 // ── Task Tiers ──────────────────────────────────────────────────────────
 
@@ -27,6 +27,11 @@ export interface MemoryRecord {
   source: "user" | "tool_result" | "agent";
   fingerprint: string;
   resolved?: boolean;
+  action?: string;
+  result?: string;
+  reason?: string;
+  retryCount?: number;
+  toolName?: string;
 }
 
 // ── Failure Classification ─────────────────────────────────────────────
@@ -104,6 +109,8 @@ export interface JevStats {
   skillGateRequests: number;
   memoryGateRequests: number;
   compactionRequests: number;
+  reviewRequests: number;
+  guiRequests: number;
 }
 
 // ── Configuration ───────────────────────────────────────────────────────
@@ -142,6 +149,10 @@ export interface JevControlConfig {
   skillGate: {
     enabled: boolean;
     maxSelected: number;
+    relevanceThreshold: number;
+  };
+  agentRouter: {
+    enabled: boolean;
   };
   memoryGate: {
     enabled: boolean;
@@ -151,6 +162,13 @@ export interface JevControlConfig {
     preserveRecentMessages: number;
     minCharsToSave: number;
     minTurnsBetweenPlans: number;
+  };
+  reviewGate: {
+    enabled: boolean;
+  };
+  guiRouter: {
+    enabled: boolean;
+    confidenceThreshold: number;
   };
 }
 
@@ -201,19 +219,85 @@ export const SAFE_BASH_COMMANDS: string[] = [
 
 // ── Dangerous bash patterns ─────────────────────────────────────────────
 
+// ── v0.3 Pruning ──────────────────────────────────────────────────────
+
+export type PruningDecision = "KEEP_RAW" | "TRUNCATE" | "DROP";
+
+export interface PiMessage {
+  role: string;
+  content?: unknown;
+  toolName?: string;
+  toolCallId?: string;
+  isError?: boolean;
+  id?: string;
+  details?: Record<string, unknown>;
+  usage?: { input_tokens: number; output_tokens: number };
+  [key: string]: unknown;
+}
+
+export interface ToolGroup {
+  callEntry: PiMessage;
+  resultEntries: PiMessage[];
+  toolName: string;
+  inputSummary: string;
+  resultSummary: string;
+  isError: boolean;
+  groupId: string;
+  messageIndices: number[];
+  charsBefore: number;
+  charsAfter: number; // estimated chars after TRUNCATE
+}
+
+export interface PruningPlan {
+  epochId: string;
+  createdAtTurn: number;
+  keepIds: Set<string>;
+  truncateIds: Set<string>;
+  dropIds: Set<string>;
+  estimatedCharsBefore: number;
+  estimatedCharsAfter: number;
+}
+
+// ── v0.3 Review ───────────────────────────────────────────────────────
+
+export type ReviewDecision = "skip" | "normal_review" | "strong_review";
+
+// ── v0.3 GUI Action ──────────────────────────────────────────────────
+
+export interface UIActionCandidate {
+  id: string;
+  label?: string;
+  role?: string;
+  description?: string;
+}
+
+// ── v0.3 Savings Stats ───────────────────────────────────────────────
+
+export interface SavingsStats {
+  contextCandidatesInspected: number;
+  contextCandidatesRejected: number;
+  toolResultCharsPruned: number;
+  toolResultCharsTruncated: number;
+  memoryRecordsCreated: number;
+  retriesPrevented: number;
+  modelTierDecisions: number;
+  estimatedContextTokensSaved: number;
+}
+
+// ── Dangerous bash patterns ───────────────────────────────────────────
+
 export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
-  /^rm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+/,
-  /^git\s+reset\s+--hard\b/,
-  /^git\s+clean\s+-[a-zA-Z]*[df]/,
-  /^git\s+checkout\s+--\s+\./,
-  /^git\s+restore\s+\./,
-  /^sudo\b/,
-  /^npm\s+publish\b/,
-  /^pnpm\s+publish\b/,
-  /^yarn\s+publish\b/,
-  /^Remove-Item\s+(-[a-zA-Z]*[rf])/i,
-  /^del\s+\/s/i,
-  /^rmdir\s+\/s/i,
-  /^format\b/i,
-  /^diskpart\b/i,
+  /(?:^|[;&|]\s*)rm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+/i,
+  /(?:^|[;&|]\s*)git\s+reset\s+--hard\b/i,
+  /(?:^|[;&|]\s*)git\s+clean\s+-[a-zA-Z]*[df]/i,
+  /(?:^|[;&|]\s*)git\s+checkout\s+--\s+\./i,
+  /(?:^|[;&|]\s*)git\s+restore\s+\./i,
+  /(?:^|[;&|]\s*)sudo\b/i,
+  /(?:^|[;&|]\s*)(?:npm|pnpm|yarn)\s+publish\b/i,
+  /(?:^|[;&|]\s*)Remove-Item\b[^\r\n;&|]*(?:-Recurse|-Force)/i,
+  /(?:^|[;&|]\s*)del\s+\/s/i,
+  /(?:^|[;&|]\s*)rmdir\s+\/s/i,
+  /(?:^|[;&|]\s*)format\b/i,
+  /(?:^|[;&|]\s*)diskpart\b/i,
+  /(?:^|\s)find\b[^\r\n;&|]*(?:-delete|-exec(?:dir)?|-ok(?:dir)?|-fprint)\b/i,
 ];

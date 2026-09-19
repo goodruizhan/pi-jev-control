@@ -14,6 +14,8 @@ export const jevStats: JevStats = {
   skillGateRequests: 0,
   memoryGateRequests: 0,
   compactionRequests: 0,
+  reviewRequests: 0,
+  guiRequests: 0,
 };
 
 /**
@@ -47,6 +49,12 @@ export function recordRequest(module: string, inputTokens: number, outputTokens:
     case "compaction":
       jevStats.compactionRequests += 1;
       break;
+    case "review":
+      jevStats.reviewRequests += 1;
+      break;
+    case "gui":
+      jevStats.guiRequests += 1;
+      break;
   }
 }
 
@@ -73,6 +81,8 @@ export function resetStats(): void {
   jevStats.skillGateRequests = 0;
   jevStats.memoryGateRequests = 0;
   jevStats.compactionRequests = 0;
+  jevStats.reviewRequests = 0;
+  jevStats.guiRequests = 0;
 }
 
 /**
@@ -96,5 +106,7 @@ export function formatStats(): string {
     `  Skill Gate: ${jevStats.skillGateRequests} calls`,
     `  Memory Gate: ${jevStats.memoryGateRequests} calls`,
     `  Compaction: ${jevStats.compactionRequests} calls`,
+    `  Review Gate: ${jevStats.reviewRequests} calls`,
+    `  GUI Action Router: ${jevStats.guiRequests} calls`,
   ].join("\n");
 }

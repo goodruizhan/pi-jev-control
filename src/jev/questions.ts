@@ -1,4 +1,4 @@
-import { choice, noul, score } from "@typesafe-ai/sdk";
+import { choice, noul } from "@typesafe-ai/sdk";
 
 /**
  * Jev questions used across all modules.
@@ -84,6 +84,29 @@ export const FAILURE_TYPE_QUESTION = choice(
     unknown: null,
   },
 );
+
+// ── Pruning (Context Pruning) ─────────────────────────────────────────
+
+export const PRUNING_USEFULNESS_QUESTION = noul(
+  "Is this tool call/result group still useful for the current task?",
+);
+
+export const PRUNING_REPEAT_MISTAKE_QUESTION = noul(
+  "Would removing this tool group lose information needed to avoid repeating mistakes?",
+);
+
+// ── Review Gate ────────────────────────────────────────────────────────
+
+export const REVIEW_NEEDED_QUESTION = choice(
+  "Should this code change be reviewed? Options: skip (no review needed, trivial change), normal_review (standard review), or strong_review (high-risk change requiring detailed review).",
+  {
+    skip: null,
+    normal_review: null,
+    strong_review: null,
+  },
+);
+
+// ── Failure Classifier + Retry Judge (combined) ────────────────────────
 
 export const RECOMMENDED_ACTION_QUESTION = choice(
   "What action is recommended: retry_once (safe retry without changes), repair_then_retry (fix something first), do_not_retry (retrying won't help), escalate (need stronger model/help), ask_user (need user input), or unknown.",

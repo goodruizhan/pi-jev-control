@@ -14,7 +14,7 @@ import { recordRequest, recordFailure } from "../stats/stats.js";
 
 interface JevClientOptions {
   /** Module name for stats tracking */
-  module: "router" | "toolGate" | "failureJudge" | "contextGate" | "skillGate" | "memoryGate" | "compaction";
+  module: "router" | "toolGate" | "failureJudge" | "contextGate" | "skillGate" | "memoryGate" | "compaction" | "review" | "gui";
   /** AbortSignal for cancellation */
   signal?: AbortSignal;
   /** Override timeout in ms */

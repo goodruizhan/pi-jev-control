@@ -118,8 +118,13 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
       `same_failure_count: ${sameFailureCount + 1}`,
     ].join("\n");
 
+    const augmentedContent = [
+      ...event.content,
+      { type: "text" as const, text: judgmentText },
+    ];
+
     return {
-      content: event.content,
+      content: augmentedContent,
       details: event.details,
       isError: event.isError,
       usage: event.usage,
