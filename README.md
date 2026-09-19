@@ -4,6 +4,20 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v0.4 Runtime Reliability
+
+- Reuses an approved `write`/`edit` path within the same user task
+- Block messages include `uncertainField` and `retryHint`
+- Skips benign `rg`/`grep` exit code 1 locally without a Jev request
+- Sends exit code, stderr, command category, abort state, and failure count to Jev
+- Repeated action/failure families short-circuit locally to `do_not_retry`
+- Retry circuit breaking starts after two same-family failures; remembered failures warn by default instead of blocking
+- Failure assessments are explicitly labeled as plugin output
+- Failure Judge timeout reduced to 1200 ms by default
+- Context, skill, memory, and compaction gates are enabled by default
+- Compaction skips Jev locally when available tool output cannot meet the savings threshold
+- Savings report includes actual removed characters and operational counters
+
 ## v0.3 Features (New)
 
 - **Bilingual UI** — switch user-facing prompts and results with `/jev language en|zh-CN`
@@ -84,20 +98,24 @@ Create `~/.pi/agent/jev-control.json`:
   "toolGate": {
     "enabled": true,
     "useDeterministicFastPath": true,
-    "confirmOnLowConfidence": false
+    "confirmOnLowConfidence": false,
+    "reuseApprovedWrites": true,
+    "blockOnRememberedFailure": false
   },
   "retryJudge": {
     "enabled": true,
-    "maxSameFailureRetries": 1
+    "maxSameFailureRetries": 2,
+    "timeoutMs": 1200,
+    "skipBenignExitCodes": true
   },
   "contextGate": {
-    "enabled": false,
+    "enabled": true,
     "maxCandidates": 40,
     "maxSelected": 5,
     "relevanceThreshold": 0.55
   },
   "skillGate": {
-    "enabled": false,
+    "enabled": true,
     "maxSelected": 4,
     "relevanceThreshold": 0.55
   },
@@ -105,10 +123,10 @@ Create `~/.pi/agent/jev-control.json`:
     "enabled": true
   },
   "memoryGate": {
-    "enabled": false
+    "enabled": true
   },
   "compaction": {
-    "enabled": false,
+    "enabled": true,
     "preserveRecentMessages": 8,
     "minCharsToSave": 8000,
     "minTurnsBetweenPlans": 20

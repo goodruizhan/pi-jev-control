@@ -13,7 +13,7 @@ import { setupSkillGate } from "../src/gates/skill-gate.js";
 import { setupAgentRouter } from "../src/router/agent-router.js";
 import { analyzeUserInput } from "../src/memory/memory-gate.js";
 import { searchMemory } from "../src/memory/retrieval.js";
-import { clearAllMemory, getMemoryCount, getDataPath, markFailureResolved } from "../src/memory/store.js";
+import { clearAllMemory, ensureMemoryStore, getMemoryCount, getDataPath, markFailureResolved } from "../src/memory/store.js";
 import { callJev } from "../src/jev/client.js";
 import { choice } from "@typesafe-ai/sdk";
 import { Type } from "typebox";
@@ -40,6 +40,8 @@ export default function (pi: ExtensionAPI) {
     console.log(tr("[pi-jev-control] Disabled in config", "[pi-jev-control] 已在配置中禁用"));
     return;
   }
+
+  if (config.memoryGate.enabled) ensureMemoryStore();
 
   // ── Setup event handlers ────────────────────────────────────────
 
@@ -327,7 +329,7 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     : "N/A";
 
   return [
-    `pi-jev-control v0.3.0`,
+    `pi-jev-control v0.4.0`,
     trFor(config.language, `Jev API: ${jevStatus}`, `Jev API：${jevStatus}`),
     trFor(config.language, `Language: ${config.language}`, `语言：简体中文（zh-CN）`),
     trFor(config.language, `Model: ${config.jev.model}`, `模型：${config.jev.model}`),

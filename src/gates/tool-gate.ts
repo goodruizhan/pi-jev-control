@@ -5,10 +5,17 @@ import { TOOL_GATE_QUESTION } from "../jev/questions.js";
 import { normalizeToolGateDecision } from "../jev/normalize.js";
 import type { ToolGateDecision } from "../types.js";
 import { SAFE_READONLY_TOOLS, SAFE_BASH_COMMANDS, DANGEROUS_BASH_PATTERNS } from "../types.js";
-import { getFailureCountByInput } from "../state/runtime-state.js";
+import {
+  approveAction,
+  clearApprovedActions,
+  getFailureCountByActionKey,
+  getFailureCountByInput,
+  isActionApproved,
+} from "../state/runtime-state.js";
 import { findSimilarFailure } from "../memory/retrieval.js";
-import { recordRetryPrevented } from "../stats/savings.js";
+import { recordApprovalCacheHit, recordRetryPrevented, recordToolGateBlock } from "../stats/savings.js";
 import { tr } from "../i18n.js";
+import { getActionKey, getUncertainField, isWriteLikeTool } from "../action-context.js";
 
 
 /**
@@ -27,6 +34,11 @@ import { tr } from "../i18n.js";
  */
 
 export function setupToolGate(pi: ExtensionAPI): void {
+  // Approvals are scoped to one user task/turn, not the whole process lifetime.
+  pi.on("input", (event) => {
+    if (event.source !== "extension") clearApprovedActions();
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     const config = loadConfig();
     if (!config.enabled || !config.toolGate.enabled) return;
@@ -34,33 +46,45 @@ export function setupToolGate(pi: ExtensionAPI): void {
     const toolName = event.toolName;
     const toolInput = event.input as Record<string, unknown>;
     const inputSummary = JSON.stringify(toolInput).slice(0, 1500);
+    const actionKey = getActionKey(toolName, toolInput);
 
     // Repeated-failure protection applies before every allow fast path.
     const maxRetries = config.retryJudge.maxSameFailureRetries;
-    const failureCount = getFailureCountByInput(toolName, inputSummary);
+    const failureCount = Math.max(
+      getFailureCountByActionKey(actionKey),
+      getFailureCountByInput(toolName, inputSummary),
+    );
     if (failureCount >= maxRetries && maxRetries > 0) {
       recordRetryPrevented();
-      return {
-        block: true,
-        reason: tr(
-          `This action already failed ${failureCount} time(s). Change the approach or provide new evidence before retrying.`,
-          `此操作已经失败 ${failureCount} 次。请更换方法或提供新证据后再重试。`,
-        ),
-      };
+      return block(blockReason(
+          tr(
+            `This action already failed ${failureCount} time(s).`,
+            `此操作已经失败 ${failureCount} 次。`,
+          ),
+          getUncertainField(toolName, toolInput),
+          tr("Change the approach or input before retrying; use /jev reset only after the cause is fixed.", "请先修改方法或输入再重试；仅在问题已修复后使用 /jev reset 清除熔断记录。"),
+        ));
     }
 
     if (config.memoryGate.enabled) {
       const similarFailure = findSimilarFailure(toolName, inputSummary);
       if (similarFailure && !similarFailure.resolved) {
-        recordRetryPrevented();
-        return {
-          block: true,
-          reason: tr(
-            `Similar unresolved failure found in memory: ${similarFailure.summary}. Change the approach or resolve the previous issue first.`,
-            `记忆中存在相似且尚未解决的失败：${similarFailure.summary}。请更换方法或先解决之前的问题。`,
-          ),
-        };
+        const message = blockReason(
+            tr(`Similar unresolved failure found in memory: ${similarFailure.summary}.`, `记忆中存在相似且尚未解决的失败：${similarFailure.summary}。`),
+            getUncertainField(toolName, toolInput),
+            tr(`Resolve it with /jev memory resolve ${similarFailure.id}, or change the action.`, `可使用 /jev memory resolve ${similarFailure.id} 将其标记为已解决，或更改操作。`),
+          );
+        if (config.toolGate.blockOnRememberedFailure) {
+          recordRetryPrevented();
+          return block(message);
+        }
+        ctx.ui.notify(message, "warning");
       }
+    }
+
+    if (config.toolGate.reuseApprovedWrites && isWriteLikeTool(toolName) && isActionApproved(actionKey)) {
+      recordApprovalCacheHit();
+      return;
     }
 
     // ── 1. Safe readonly tools ────────────────────────────────────
@@ -89,7 +113,7 @@ export function setupToolGate(pi: ExtensionAPI): void {
     }
 
     // ── 3. Every unknown or mutating tool is Jev-gated ────────────
-    return judgeUnknownTool(toolName, toolInput, ctx);
+    return judgeUnknownTool(toolName, toolInput, actionKey, ctx);
   });
 }
 
@@ -105,6 +129,7 @@ export function classifyShellCommand(command: string): ShellRisk {
 async function judgeUnknownTool(
   toolName: string,
   toolInput: Record<string, unknown>,
+  actionKey: string,
   ctx: ExtensionContext,
 ) {
   const config = loadConfig();
@@ -127,33 +152,60 @@ async function judgeUnknownTool(
       const confidence = answer.confidence;
 
       const policy = resolveJevGatePolicy(decision, confidence, config.toolGate.confirmOnLowConfidence);
-      if (policy === "allow") return;
+      if (policy === "allow") {
+        rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
+        return;
+      }
       if (policy === "deny") {
-        return { block: true, reason: tr("[Jev] Tool Gate denied this operation", "[Jev] 工具门控拒绝了此操作") };
+        return block(blockReason(
+            tr("[Jev] Tool Gate denied this operation.", "[Jev] 工具门控拒绝了此操作。"),
+            getUncertainField(toolName, toolInput),
+            tr("Ask the user to explicitly authorize this exact operation, then retry it once.", "请让用户明确授权这一具体操作，然后重试一次。"),
+          ));
       }
 
-      return confirmOrBlock(
+      const blocked = await confirmOrBlock(
         ctx,
         tr("Tool Gate Confirmation", "工具门控确认"),
         tr(
           `Jev did not produce a high-confidence allow decision for ${toolName}.\n\nInput: ${inputSummary.slice(0, 300)}\n\nAllow?`,
           `Jev 未能对 ${toolName} 给出高置信度的允许决策。\n\n输入：${inputSummary.slice(0, 300)}\n\n是否允许？`,
         ),
-        tr("Blocked — uncertain or mutating operation was not confirmed", "已阻止——不确定或会产生修改的操作未获得确认"),
+        blockReason(
+          tr("Blocked — uncertain or mutating operation was not confirmed.", "已阻止——不确定或会产生修改的操作未获得确认。"),
+          getUncertainField(toolName, toolInput),
+          tr("Confirm the prompt, or explicitly authorize the exact path/action and retry.", "请在确认框中允许，或明确授权具体路径/操作后重试。"),
+        ),
       );
+      if (!blocked) rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
+      return blocked;
     }
   }
 
   // Fail closed: unavailable/failed Jev never silently authorizes an unknown mutation.
-  return confirmOrBlock(
+  const blocked = await confirmOrBlock(
     ctx,
     tr("Tool Gate Confirmation", "工具门控确认"),
     tr(
       `Jev is unavailable. Confirm this unknown or mutating tool call manually.\n\nTool: ${toolName}\nInput: ${inputSummary.slice(0, 300)}`,
       `Jev 当前不可用，请手动确认这个未知或会产生修改的工具调用。\n\n工具：${toolName}\n输入：${inputSummary.slice(0, 300)}`,
     ),
-    tr("Blocked — Jev unavailable and operation was not confirmed", "已阻止——Jev 不可用且操作未获得确认"),
+    blockReason(
+      tr("Blocked — Jev unavailable and operation was not confirmed.", "已阻止——Jev 不可用且操作未获得确认。"),
+      getUncertainField(toolName, toolInput),
+      tr("Confirm the prompt and retry; the approval will be reused for this path during the current task.", "请确认后重试；当前任务内将复用对此路径的授权。"),
+    ),
   );
+  if (!blocked) rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
+  return blocked;
+}
+
+function rememberApprovedWrite(toolName: string, actionKey: string, enabled: boolean): void {
+  if (enabled && isWriteLikeTool(toolName)) approveAction(actionKey);
+}
+
+function blockReason(message: string, uncertainField: string, retryHint: string): string {
+  return `${message}\nuncertainField: ${uncertainField}\nretryHint: ${retryHint}`;
 }
 
 export function resolveJevGatePolicy(
@@ -179,6 +231,11 @@ async function confirmOrBlock(
   } catch {
     // Headless/non-interactive contexts cannot confirm, so block.
   }
+  return block(reason);
+}
+
+function block(reason: string) {
+  recordToolGateBlock();
   return { block: true, reason };
 }
 

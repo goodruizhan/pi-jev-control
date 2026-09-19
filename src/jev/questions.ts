@@ -72,9 +72,16 @@ export const TOOL_GATE_QUESTION = choice(
 // ── Failure Classifier + Retry Judge (combined) ────────────────────────
 
 export const FAILURE_TYPE_QUESTION = choice(
-  "Classify this tool failure type: transient (temporary, retry may work), code_error (bug in code), configuration (wrong config/path/version), permission (access denied), environment (missing dependency/tool), invalid_input (bad arguments), repeated (same failure seen before), or unknown.",
+  "Classify this tool failure using all structured evidence (exit_code, stderr_excerpt, command_category, same_failure_count). Choose: transient, cancelled, timeout, network, rate_limited, authentication, not_found, conflict, code_error, configuration, permission, environment, invalid_input, repeated, or unknown.",
   {
     transient: null,
+    cancelled: null,
+    timeout: null,
+    network: null,
+    rate_limited: null,
+    authentication: null,
+    not_found: null,
+    conflict: null,
     code_error: null,
     configuration: null,
     permission: null,
@@ -109,10 +116,15 @@ export const REVIEW_NEEDED_QUESTION = choice(
 // ── Failure Classifier + Retry Judge (combined) ────────────────────────
 
 export const RECOMMENDED_ACTION_QUESTION = choice(
-  "What action is recommended: retry_once (safe retry without changes), repair_then_retry (fix something first), do_not_retry (retrying won't help), escalate (need stronger model/help), ask_user (need user input), or unknown.",
+  "Choose the most concrete next action from the evidence: retry_once, retry_with_backoff, repair_then_retry, change_input, install_dependency, request_permission, inspect_logs, do_not_retry, escalate, ask_user, or unknown. If same_failure_count is at least 1, do not recommend an unchanged retry.",
   {
     retry_once: null,
+    retry_with_backoff: null,
     repair_then_retry: null,
+    change_input: null,
+    install_dependency: null,
+    request_permission: null,
+    inspect_logs: null,
     do_not_retry: null,
     escalate: null,
     ask_user: null,

@@ -12,7 +12,14 @@ import {
 } from "./epoch.js";
 import { checkCacheGate } from "./cache-aware.js";
 import { readAllFailures } from "../memory/store.js";
-import { recordCharsPruned, recordCharsTruncated, recordTokensSaved } from "../stats/savings.js";
+import {
+  recordCharsPruned,
+  recordCharsTruncated,
+  recordContextEvent,
+  recordPruningPlanGenerated,
+  recordPruningPlanSkipped,
+  recordTokensSaved,
+} from "../stats/savings.js";
 
 /**
  * Context Hook — intercepts the context event to prune old tool output.
@@ -40,6 +47,7 @@ export function setupContextHook(pi: ExtensionAPI): void {
 
     const messages = event.messages as unknown as PiMessage[];
     if (!Array.isArray(messages) || messages.length === 0) return;
+    recordContextEvent();
     if (consumeSkipNextGeneration()) return;
 
     const existingPlan = getEpochPlan();
@@ -51,11 +59,20 @@ export function setupContextHook(pi: ExtensionAPI): void {
     }
 
     if (needsPlan) {
+      // Avoid a network round trip when the entire tool-result budget is too small
+      // to satisfy the configured minimum savings threshold.
+      const candidateChars = buildToolGroups(messages).groups.reduce((sum, group) => sum + group.charsBefore, 0);
+      if (candidateChars < config.compaction.minCharsToSave) {
+        recordPruningPlanSkipped();
+        return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
+      }
       try {
         const plan = await buildPruningPlan(messages, ctx.signal);
+        recordPruningPlanGenerated();
         const gateResult = checkCacheGate(plan);
 
         if (!gateResult.shouldPrune) {
+          recordPruningPlanSkipped();
           // Keep a still-valid older plan if the replacement has too little benefit.
           return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
         }

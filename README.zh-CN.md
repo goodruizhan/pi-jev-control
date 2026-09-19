@@ -4,6 +4,20 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v0.4 运行可靠性优化
+
+- 在同一用户任务内复用已授权的 `write`/`edit` 路径
+- 拦截消息提供 `uncertainField` 和 `retryHint`
+- 在本地短路 `rg`/`grep` 无匹配产生的 exit code 1，不再请求 Jev
+- 向 Jev 提供退出码、stderr、命令类别、中止状态和失败计数
+- 相同操作/失败类别重复出现时，本地直接建议 `do_not_retry`
+- 同类失败累计两次后才熔断；历史失败默认提醒而非硬拦截
+- 明确标注失败评估来自插件，并非工具输出
+- 失败判断默认超时缩短至 1200 毫秒
+- 上下文、技能、记忆和压缩门控改为默认开启
+- 工具输出不足以达到节省阈值时，压缩功能在本地跳过 Jev
+- 节省报告新增实际移除字符数和运行计数
+
 ## v0.3 新功能
 
 - **双语界面** — 使用 `/jev language en|zh-CN` 切换面向用户的提示和结果
@@ -84,20 +98,24 @@ pi install git:github.com/goodruizhan/pi-jev-control
   "toolGate": {
     "enabled": true,
     "useDeterministicFastPath": true,
-    "confirmOnLowConfidence": false
+    "confirmOnLowConfidence": false,
+    "reuseApprovedWrites": true,
+    "blockOnRememberedFailure": false
   },
   "retryJudge": {
     "enabled": true,
-    "maxSameFailureRetries": 1
+    "maxSameFailureRetries": 2,
+    "timeoutMs": 1200,
+    "skipBenignExitCodes": true
   },
   "contextGate": {
-    "enabled": false,
+    "enabled": true,
     "maxCandidates": 40,
     "maxSelected": 5,
     "relevanceThreshold": 0.55
   },
   "skillGate": {
-    "enabled": false,
+    "enabled": true,
     "maxSelected": 4,
     "relevanceThreshold": 0.55
   },
@@ -105,10 +123,10 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "enabled": true
   },
   "memoryGate": {
-    "enabled": false
+    "enabled": true
   },
   "compaction": {
-    "enabled": false,
+    "enabled": true,
     "preserveRecentMessages": 8,
     "minCharsToSave": 8000,
     "minTurnsBetweenPlans": 20

@@ -24,8 +24,10 @@ export function normalizeTaskTier(choice: string): TaskTier {
 export function normalizeFailureType(choice: string): FailureType {
   const lower = choice.toLowerCase().trim().replace(/\s+/g, "_");
   const valid: FailureType[] = [
-    "transient", "code_error", "configuration", "permission",
-    "environment", "invalid_input", "repeated", "unknown",
+    "transient", "cancelled", "timeout", "network", "rate_limited",
+    "authentication", "not_found", "conflict", "code_error",
+    "configuration", "permission", "environment", "invalid_input",
+    "repeated", "unknown",
   ];
   return valid.includes(lower as FailureType) ? (lower as FailureType) : "unknown";
 }
@@ -36,7 +38,9 @@ export function normalizeFailureType(choice: string): FailureType {
 export function normalizeRecommendedAction(choice: string): RecommendedAction {
   const lower = choice.toLowerCase().trim().replace(/\s+/g, "_");
   const valid: RecommendedAction[] = [
-    "retry_once", "repair_then_retry", "do_not_retry", "escalate", "ask_user", "unknown",
+    "retry_once", "retry_with_backoff", "repair_then_retry", "change_input",
+    "install_dependency", "request_permission", "inspect_logs", "do_not_retry",
+    "escalate", "ask_user", "unknown",
   ];
   return valid.includes(lower as RecommendedAction) ? (lower as RecommendedAction) : "unknown";
 }

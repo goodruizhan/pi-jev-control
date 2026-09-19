@@ -38,6 +38,13 @@ export interface MemoryRecord {
 
 export type FailureType =
   | "transient"
+  | "cancelled"
+  | "timeout"
+  | "network"
+  | "rate_limited"
+  | "authentication"
+  | "not_found"
+  | "conflict"
   | "code_error"
   | "configuration"
   | "permission"
@@ -48,7 +55,12 @@ export type FailureType =
 
 export type RecommendedAction =
   | "retry_once"
+  | "retry_with_backoff"
   | "repair_then_retry"
+  | "change_input"
+  | "install_dependency"
+  | "request_permission"
+  | "inspect_logs"
   | "do_not_retry"
   | "escalate"
   | "ask_user"
@@ -69,6 +81,8 @@ export interface RouterResult {
 
 export interface FailureRecord {
   signature: string;
+  actionKey: string;
+  commandCategory: string;
   toolName: string;
   inputSummary: string;
   errorExcerpt: string;
@@ -92,6 +106,7 @@ export interface RuntimeState {
     timestamp: number;
   };
   recentFailures: FailureRecord[];
+  approvedActionKeys: Set<string>;
 }
 
 // ── Jev Stats ───────────────────────────────────────────────────────────
@@ -137,10 +152,14 @@ export interface JevControlConfig {
     enabled: boolean;
     useDeterministicFastPath: boolean;
     confirmOnLowConfidence: boolean;
+    reuseApprovedWrites: boolean;
+    blockOnRememberedFailure: boolean;
   };
   retryJudge: {
     enabled: boolean;
     maxSameFailureRetries: number;
+    timeoutMs: number;
+    skipBenignExitCodes: boolean;
   };
   contextGate: {
     enabled: boolean;
@@ -276,6 +295,9 @@ export interface UIActionCandidate {
 // ── v0.3 Savings Stats ───────────────────────────────────────────────
 
 export interface SavingsStats {
+  contextEventsProcessed: number;
+  pruningPlansGenerated: number;
+  pruningPlansSkipped: number;
   contextCandidatesInspected: number;
   contextCandidatesRejected: number;
   toolResultCharsPruned: number;
@@ -283,6 +305,9 @@ export interface SavingsStats {
   memoryRecordsCreated: number;
   retriesPrevented: number;
   modelTierDecisions: number;
+  benignFailuresSkipped: number;
+  approvalCacheHits: number;
+  toolGateBlocks: number;
   estimatedContextTokensSaved: number;
 }
 

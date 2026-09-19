@@ -5,6 +5,7 @@ const MAX_FAILURE_RECORDS = 50;
 /** Singleton runtime state — shared across all modules */
 export const runtimeState: RuntimeState = {
   recentFailures: [],
+  approvedActionKeys: new Set<string>(),
 };
 
 /**
@@ -70,6 +71,32 @@ export function getFailureCountByInput(toolName: string, inputSummary: string): 
   return totalCount;
 }
 
+/** Count failures for the same normalized action (for example write + path). */
+export function getFailureCountByActionKey(actionKey: string): number {
+  return runtimeState.recentFailures
+    .filter((failure) => failure.actionKey === actionKey)
+    .reduce((total, failure) => total + failure.count, 0);
+}
+
+/** Count failures in the same tool/command family within the current session. */
+export function getFailureCountByFamily(toolName: string, commandCategory: string): number {
+  return runtimeState.recentFailures
+    .filter((failure) => failure.toolName === toolName && failure.commandCategory === commandCategory)
+    .reduce((total, failure) => total + failure.count, 0);
+}
+
+export function approveAction(actionKey: string): void {
+  runtimeState.approvedActionKeys.add(actionKey);
+}
+
+export function isActionApproved(actionKey: string): boolean {
+  return runtimeState.approvedActionKeys.has(actionKey);
+}
+
+export function clearApprovedActions(): void {
+  runtimeState.approvedActionKeys.clear();
+}
+
 /**
  * Reset all runtime state.
  */
@@ -79,4 +106,5 @@ export function resetState(): void {
   runtimeState.lastJevModel = undefined;
   runtimeState.lastDecision = undefined;
   runtimeState.recentFailures = [];
+  runtimeState.approvedActionKeys.clear();
 }

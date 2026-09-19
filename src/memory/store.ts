@@ -40,6 +40,13 @@ function ensureDir(dir: string): void {
   }
 }
 
+/** Create the current project's store so installation health is observable. */
+export function ensureMemoryStore(cwd?: string): string {
+  const dir = getProjectDir(cwd);
+  ensureDir(dir);
+  return dir;
+}
+
 /**
  * Append a memory record to memory.jsonl.
  */
