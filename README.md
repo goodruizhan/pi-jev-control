@@ -1,5 +1,7 @@
 # pi-jev-control
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
 ## v0.3 Features (New)
