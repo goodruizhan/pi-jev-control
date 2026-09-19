@@ -54,7 +54,7 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 pi -e ./extensions/index.ts
 
 # After publishing
-pi install git:github.com/<user>/pi-jev-control
+pi install git:github.com/goodruizhan/pi-jev-control
 ```
 
 ## Configuration

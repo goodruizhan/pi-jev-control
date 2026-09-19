@@ -54,7 +54,7 @@
 pi -e ./extensions/index.ts
 
 # 发布后安装
-pi install git:github.com/<user>/pi-jev-control
+pi install git:github.com/goodruizhan/pi-jev-control
 ```
 
 ## 配置
