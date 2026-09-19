@@ -42,6 +42,7 @@ export function setupToolGate(pi: ExtensionAPI): void {
   pi.on("tool_call", async (event, ctx) => {
     const config = loadConfig();
     if (!config.enabled || !config.toolGate.enabled) return;
+    const advisory = config.toolGate.mode === "advisory";
 
     const toolName = event.toolName;
     const toolInput = event.input as Record<string, unknown>;
@@ -55,15 +56,25 @@ export function setupToolGate(pi: ExtensionAPI): void {
       getFailureCountByInput(toolName, inputSummary),
     );
     if (failureCount >= maxRetries && maxRetries > 0) {
-      recordRetryPrevented();
-      return block(blockReason(
+      const reason = blockReason(
           tr(
             `This action already failed ${failureCount} time(s).`,
             `此操作已经失败 ${failureCount} 次。`,
           ),
           getUncertainField(toolName, toolInput),
           tr("Change the approach or input before retrying; use /jev reset only after the cause is fixed.", "请先修改方法或输入再重试；仅在问题已修复后使用 /jev reset 清除熔断记录。"),
-        ));
+        );
+      if (advisory) {
+        ctx.ui.notify(reason, "warning");
+        return;
+      }
+      recordRetryPrevented();
+      return block(reason);
+    }
+
+    if (config.toolGate.reuseApprovedWrites && isWriteLikeTool(toolName) && isActionApproved(actionKey)) {
+      recordApprovalCacheHit();
+      return;
     }
 
     if (config.memoryGate.enabled) {
@@ -82,11 +93,6 @@ export function setupToolGate(pi: ExtensionAPI): void {
       }
     }
 
-    if (config.toolGate.reuseApprovedWrites && isWriteLikeTool(toolName) && isActionApproved(actionKey)) {
-      recordApprovalCacheHit();
-      return;
-    }
-
     // ── 1. Safe readonly tools ────────────────────────────────────
     if (config.toolGate.useDeterministicFastPath && SAFE_READONLY_TOOLS.has(toolName)) {
       return; // allow
@@ -100,6 +106,13 @@ export function setupToolGate(pi: ExtensionAPI): void {
       if (risk === "safe" && config.toolGate.useDeterministicFastPath) return;
 
       if (risk === "dangerous") {
+        if (advisory) {
+          ctx.ui.notify(tr(
+            `[Jev advisory] Dangerous command detected but not blocked: ${command.slice(0, 300)}`,
+            `[Jev 辅助提示] 检测到危险命令，但辅助模式不会拦截：${command.slice(0, 300)}`,
+          ), "warning");
+          return;
+        }
         return confirmOrBlock(
           ctx,
           tr("Dangerous Command", "危险命令"),
@@ -157,11 +170,24 @@ async function judgeUnknownTool(
         return;
       }
       if (policy === "deny") {
+        if (config.toolGate.mode === "advisory") {
+          ctx.ui.notify(tr(
+            `[Jev advisory] Tool Gate recommends denying ${toolName}, but advisory mode will continue.`,
+            `[Jev 辅助提示] 工具门控建议拒绝 ${toolName}，但辅助模式将继续执行。`,
+          ), "warning");
+          rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
+          return;
+        }
         return block(blockReason(
             tr("[Jev] Tool Gate denied this operation.", "[Jev] 工具门控拒绝了此操作。"),
             getUncertainField(toolName, toolInput),
             tr("Ask the user to explicitly authorize this exact operation, then retry it once.", "请让用户明确授权这一具体操作，然后重试一次。"),
           ));
+      }
+
+      if (config.toolGate.mode === "advisory") {
+        rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
+        return;
       }
 
       const blocked = await confirmOrBlock(
@@ -180,6 +206,11 @@ async function judgeUnknownTool(
       if (!blocked) rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
       return blocked;
     }
+  }
+
+  if (config.toolGate.mode === "advisory") {
+    rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
+    return;
   }
 
   // Fail closed: unavailable/failed Jev never silently authorizes an unknown mutation.

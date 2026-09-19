@@ -58,6 +58,7 @@ test("approved writes are reused within a task and blocked results include retry
   const config = loadConfig();
   config.enabled = true;
   config.toolGate.enabled = true;
+  config.toolGate.mode = "enforce";
   config.toolGate.reuseApprovedWrites = true;
   config.memoryGate.enabled = false;
 

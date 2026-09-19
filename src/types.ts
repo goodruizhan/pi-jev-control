@@ -150,6 +150,7 @@ export interface JevControlConfig {
   };
   toolGate: {
     enabled: boolean;
+    mode: "advisory" | "enforce";
     useDeterministicFastPath: boolean;
     confirmOnLowConfidence: boolean;
     reuseApprovedWrites: boolean;

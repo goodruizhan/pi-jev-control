@@ -1,6 +1,6 @@
 {
   "name": "pi-jev-control",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Jev-powered control layer for Pi Coding Agent — routing, tool gating, failure classification, retry judgment, context pruning, compaction epoch, review gate, GUI action router",
   "private": true,
   "keywords": ["pi-package", "jev", "typesafe", "router", "tool-gate"],
@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test test/control.test.mjs test/context.test.mjs test/pruning.test.mjs i18n.test.mjs policy.test.mjs runtime.test.mjs",
+    "test": "npm run build && node --test control.test.mjs test/context.test.mjs test/pruning.test.mjs i18n.test.mjs policy.test.mjs runtime.test.mjs",
     "test:jev": "npm run build && node test/jev-smoke.mjs"
   },
   "dependencies": {

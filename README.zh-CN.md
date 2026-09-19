@@ -97,6 +97,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
   },
   "toolGate": {
     "enabled": true,
+    "mode": "advisory",
     "useDeterministicFastPath": true,
     "confirmOnLowConfidence": false,
     "reuseApprovedWrites": true,
@@ -156,7 +157,16 @@ pi install git:github.com/goodruizhan/pi-jev-control
 
 ### 工具门控确认策略
 
-`toolGate.confirmOnLowConfidence` 默认为 `false`，低置信度的 Jev 决策将继续执行，不再反复弹出确认提示。确定性危险命令仍然需要确认，高置信度的明确拒绝仍会被拦截，Jev 不可用时仍会回退到手动确认。如需恢复之前的严格行为，可将其设为 `true`。
+工具门控默认使用 `"mode": "advisory"`。辅助模式可以显示风险建议，但绝不会要求确认，也不会拦截工具调用。Pi 自身内置的安全确认属于另一套机制，仍可能出现。
+
+在当前会话中切换模式：
+
+```text
+/jev toolgate advisory
+/jev toolgate enforce
+```
+
+在 `enforce` 严格模式中，`confirmOnLowConfidence` 控制低置信度确认。如需完全停止工具门控评估，可将 `toolGate.enabled` 设为 `false`。
 
 ## 自定义工具
 
@@ -177,6 +187,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 - `/jev language en|zh-CN` — 切换并持久保存界面语言
 - `/jev router on|off` — 开启或关闭任务路由器
 - `/jev toolgate on|off` — 开启或关闭工具门控
+- `/jev toolgate advisory|enforce` — 在非阻塞辅助模式和严格执行模式之间切换
 - `/jev retry on|off` — 开启或关闭重试判断器
 - `/jev contextgate on|off` — 开启或关闭上下文门控
 - `/jev skillgate on|off` — 开启或关闭技能门控

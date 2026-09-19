@@ -148,6 +148,14 @@ export default function (pi: ExtensionAPI) {
       // /jev toolgate on|off — toggle Tool Gate
       if (arg.startsWith("toolgate ")) {
         const action = arg.split(" ")[1];
+        if (action === "advisory" || action === "enforce") {
+          config.toolGate.mode = action;
+          ctx.ui.notify(tr(
+            `Tool Gate mode: ${action}`,
+            `工具门控模式：${action === "advisory" ? "辅助（不确认、不拦截）" : "严格（允许确认和拦截）"}`,
+          ), "info");
+          return;
+        }
         toggleModule(action, "toolGate", config, ctx);
         return;
       }
@@ -302,8 +310,8 @@ export default function (pi: ExtensionAPI) {
       // Unknown subcommand
       ctx.ui.notify(
         tr(
-          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, language en|zh-CN, router/toolgate/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, compact on|off|status|plan|clear, reset`,
-          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、language en|zh-CN、router/toolgate/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、compact on|off|status|plan|clear、reset`,
+          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, language en|zh-CN, toolgate advisory|enforce|on|off, router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, compact on|off|status|plan|clear, reset`,
+          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、language en|zh-CN、toolgate advisory|enforce|on|off、router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、compact on|off|status|plan|clear、reset`,
         ),
         "info",
       );
@@ -329,13 +337,13 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     : "N/A";
 
   return [
-    `pi-jev-control v0.4.0`,
+    `pi-jev-control v0.4.1`,
     trFor(config.language, `Jev API: ${jevStatus}`, `Jev API：${jevStatus}`),
     trFor(config.language, `Language: ${config.language}`, `语言：简体中文（zh-CN）`),
     trFor(config.language, `Model: ${config.jev.model}`, `模型：${config.jev.model}`),
     trFor(config.language, `Timeout: ${config.jev.timeoutMs}ms`, `超时：${config.jev.timeoutMs} 毫秒`),
     trFor(config.language, `Router: ${onOff(config.router.enabled, config.language)} (mode: ${config.router.mode})`, `任务路由：${onOff(config.router.enabled, config.language)}（模式：${config.router.mode}）`),
-    trFor(config.language, `Tool Gate: ${onOff(config.toolGate.enabled, config.language)}`, `工具门控：${onOff(config.toolGate.enabled, config.language)}`),
+    trFor(config.language, `Tool Gate: ${onOff(config.toolGate.enabled, config.language)} (mode: ${config.toolGate.mode})`, `工具门控：${onOff(config.toolGate.enabled, config.language)}（模式：${config.toolGate.mode === "advisory" ? "辅助" : "严格"}）`),
     trFor(config.language, `Retry Judge: ${onOff(config.retryJudge.enabled, config.language)}`, `重试判断：${onOff(config.retryJudge.enabled, config.language)}`),
     trFor(config.language, `Context Gate: ${onOff(config.contextGate.enabled, config.language)}`, `上下文门控：${onOff(config.contextGate.enabled, config.language)}`),
     trFor(config.language, `Skill Gate: ${onOff(config.skillGate.enabled, config.language)}`, `技能门控：${onOff(config.skillGate.enabled, config.language)}`),

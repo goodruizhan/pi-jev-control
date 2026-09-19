@@ -97,6 +97,7 @@ Create `~/.pi/agent/jev-control.json`:
   },
   "toolGate": {
     "enabled": true,
+    "mode": "advisory",
     "useDeterministicFastPath": true,
     "confirmOnLowConfidence": false,
     "reuseApprovedWrites": true,
@@ -156,7 +157,16 @@ Internal decision values such as `allow`, `deny`, `cheap`, and `strong` remain u
 
 ### Tool Gate confirmation policy
 
-`toolGate.confirmOnLowConfidence` defaults to `false` for a smoother workflow. Low-confidence Jev decisions continue without prompting. Deterministically dangerous commands still require confirmation, high-confidence denials are still blocked, and unavailable Jev still falls back to manual confirmation. Set it to `true` for the stricter previous behavior.
+Tool Gate defaults to `"mode": "advisory"`. In advisory mode it can display risk recommendations, but it never asks for confirmation and never blocks a tool call. Pi's own built-in security confirmations are separate and may still appear.
+
+Switch modes for the current session:
+
+```text
+/jev toolgate advisory
+/jev toolgate enforce
+```
+
+In `enforce` mode, `confirmOnLowConfidence` controls low-confidence prompts. Set `toolGate.enabled` to `false` to disable Tool Gate evaluation entirely.
 
 ## Custom Tools
 
@@ -177,6 +187,7 @@ Internal decision values such as `allow`, `deny`, `cheap`, and `strong` remain u
 - `/jev language en|zh-CN` — Switch and persist the UI language
 - `/jev router on|off` — Toggle Task Router
 - `/jev toolgate on|off` — Toggle Tool Gate
+- `/jev toolgate advisory|enforce` — Switch between non-blocking assistance and strict enforcement
 - `/jev retry on|off` — Toggle Retry Judge
 - `/jev contextgate on|off` — Toggle Context Gate
 - `/jev skillgate on|off` — Toggle Skill Gate

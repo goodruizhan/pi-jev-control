@@ -26,6 +26,7 @@ const DEFAULT_CONFIG: JevControlConfig = {
   },
   toolGate: {
     enabled: true,
+    mode: "advisory",
     useDeterministicFastPath: true,
     confirmOnLowConfidence: false,
     reuseApprovedWrites: true,
