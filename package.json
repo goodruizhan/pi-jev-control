@@ -1,6 +1,6 @@
 {
   "name": "pi-jev-control",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Jev-powered control layer for Pi Coding Agent — routing, tool gating, failure classification, retry judgment",
   "private": true,
   "keywords": ["pi-package", "jev", "typesafe", "router", "tool-gate"],
