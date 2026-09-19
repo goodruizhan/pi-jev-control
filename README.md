@@ -6,6 +6,7 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 
 ## v0.3 Features (New)
 
+- **Bilingual UI** — switch user-facing prompts and results with `/jev language en|zh-CN`
 - **Context Pruning** — `pi.on("context")` to prune old tool output from messages view (never modifies on-disk session)
   - Tool Call/Result group builder — pairs call+result, never leaves orphans
   - Recent N protection — last 8 messages always kept
@@ -64,6 +65,7 @@ Create `~/.pi/agent/jev-control.json`:
 ```json
 {
   "enabled": true,
+  "language": "en",
   "jev": {
     "model": "jev-latest",
     "timeoutMs": 4000
@@ -122,6 +124,17 @@ Create `~/.pi/agent/jev-control.json`:
 
 Project-level config override: `<project>/.pi/jev-control.json` (overrides global).
 
+### Language
+
+User-facing prompts, confirmations, status messages, and tool results support English and Simplified Chinese. English is the default. Set `"language": "zh-CN"` in the config, or switch and persist the global language from Pi:
+
+```text
+/jev language en
+/jev language zh-CN
+```
+
+Internal decision values such as `allow`, `deny`, `cheap`, and `strong` remain unchanged for API compatibility.
+
 ## Custom Tools
 
 - `jev_search_code` — Find code relevant to a task using rg + Jev ranking
@@ -138,6 +151,7 @@ Project-level config override: `<project>/.pi/jev-control.json` (overrides globa
 - `/jev stats` — Show API usage statistics
 - `/jev savings` — Show estimated savings (v0.3)
 - `/jev last` — Show last routing decision
+- `/jev language en|zh-CN` — Switch and persist the UI language
 - `/jev router on|off` — Toggle Task Router
 - `/jev toolgate on|off` — Toggle Tool Gate
 - `/jev retry on|off` — Toggle Retry Judge

@@ -1,4 +1,5 @@
 import type { JevStats } from "../types.js";
+import { tr } from "../i18n.js";
 
 /** Singleton stats — shared across all modules */
 export const jevStats: JevStats = {
@@ -94,19 +95,36 @@ export function formatStats(): string {
     : "0";
   const totalTokens = jevStats.inputTokens + jevStats.outputTokens;
 
-  return [
-    `Jev API Usage`,
-    `  Requests: ${jevStats.requests} (failures: ${jevStats.failures})`,
-    `  Tokens: ${totalTokens} (in: ${jevStats.inputTokens}, out: ${jevStats.outputTokens})`,
-    `  Avg latency: ${avgLatency}ms`,
-    `  Router: ${jevStats.routerRequests} calls`,
-    `  Tool Gate: ${jevStats.toolGateRequests} calls`,
-    `  Failure Judge: ${jevStats.failureJudgeRequests} calls`,
-    `  Context Gate: ${jevStats.contextGateRequests} calls`,
-    `  Skill Gate: ${jevStats.skillGateRequests} calls`,
-    `  Memory Gate: ${jevStats.memoryGateRequests} calls`,
-    `  Compaction: ${jevStats.compactionRequests} calls`,
-    `  Review Gate: ${jevStats.reviewRequests} calls`,
-    `  GUI Action Router: ${jevStats.guiRequests} calls`,
-  ].join("\n");
+  return tr(
+    [
+      `Jev API Usage`,
+      `  Requests: ${jevStats.requests} (failures: ${jevStats.failures})`,
+      `  Tokens: ${totalTokens} (in: ${jevStats.inputTokens}, out: ${jevStats.outputTokens})`,
+      `  Avg latency: ${avgLatency}ms`,
+      `  Router: ${jevStats.routerRequests} calls`,
+      `  Tool Gate: ${jevStats.toolGateRequests} calls`,
+      `  Failure Judge: ${jevStats.failureJudgeRequests} calls`,
+      `  Context Gate: ${jevStats.contextGateRequests} calls`,
+      `  Skill Gate: ${jevStats.skillGateRequests} calls`,
+      `  Memory Gate: ${jevStats.memoryGateRequests} calls`,
+      `  Compaction: ${jevStats.compactionRequests} calls`,
+      `  Review Gate: ${jevStats.reviewRequests} calls`,
+      `  GUI Action Router: ${jevStats.guiRequests} calls`,
+    ].join("\n"),
+    [
+      `Jev API 使用情况`,
+      `  请求：${jevStats.requests}（失败：${jevStats.failures}）`,
+      `  Token：${totalTokens}（输入：${jevStats.inputTokens}，输出：${jevStats.outputTokens}）`,
+      `  平均延迟：${avgLatency} 毫秒`,
+      `  任务路由：${jevStats.routerRequests} 次`,
+      `  工具门控：${jevStats.toolGateRequests} 次`,
+      `  失败判断：${jevStats.failureJudgeRequests} 次`,
+      `  上下文门控：${jevStats.contextGateRequests} 次`,
+      `  技能门控：${jevStats.skillGateRequests} 次`,
+      `  记忆门控：${jevStats.memoryGateRequests} 次`,
+      `  上下文压缩：${jevStats.compactionRequests} 次`,
+      `  审查门控：${jevStats.reviewRequests} 次`,
+      `  GUI 操作路由：${jevStats.guiRequests} 次`,
+    ].join("\n"),
+  );
 }

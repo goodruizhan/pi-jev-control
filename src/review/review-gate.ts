@@ -4,6 +4,7 @@ import { callJev, isJevAvailable } from "../jev/client.js";
 import { REVIEW_NEEDED_QUESTION } from "../jev/questions.js";
 import { normalizeReviewDecision } from "../jev/normalize.js";
 import type { ReviewDecision } from "../types.js";
+import { tr } from "../i18n.js";
 
 /**
  * Review Gate — determines if a code change needs review.
@@ -166,47 +167,47 @@ export async function judgeReview(
 export function setupReviewGate(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "jev_review_check",
-    label: "Jev Review Gate",
-    description: "Determine if a code change needs review (skip/normal_review/strong_review) using Jev.",
+    label: tr("Jev Review Gate", "Jev 审查门控"),
+    description: tr("Determine if a code change needs review (skip/normal_review/strong_review) using Jev.", "使用 Jev 判断代码改动需要跳过、普通还是强审查。"),
     parameters: {
       type: "object",
       properties: {
         modifiedFiles: {
           type: "number",
-          description: "Number of modified files",
+          description: tr("Number of modified files", "修改的文件数量"),
         },
         fileTypes: {
           type: "array",
           items: { type: "string" },
-          description: "Types/paths of modified files (e.g. ['.cpp', '.h', 'Source/AI/...'])",
+          description: tr("Types/paths of modified files (e.g. ['.cpp', '.h', 'Source/AI/...'])", "修改文件的类型/路径（例如 ['.cpp', '.h', 'Source/AI/...']）"),
         },
         isCoreSystem: {
           type: "boolean",
-          description: "Whether the change touches core systems",
+          description: tr("Whether the change touches core systems", "改动是否涉及核心系统"),
         },
         involvesGC: {
           type: "boolean",
-          description: "Whether the change involves garbage collection",
+          description: tr("Whether the change involves garbage collection", "改动是否涉及垃圾回收"),
         },
         involvesThreading: {
           type: "boolean",
-          description: "Whether the change involves multithreading",
+          description: tr("Whether the change involves multithreading", "改动是否涉及多线程"),
         },
         involvesReplication: {
           type: "boolean",
-          description: "Whether the change involves replication",
+          description: tr("Whether the change involves replication", "改动是否涉及复制"),
         },
         involvesGAS: {
           type: "boolean",
-          description: "Whether the change involves GAS (Gameplay Ability System)",
+          description: tr("Whether the change involves GAS (Gameplay Ability System)", "改动是否涉及 GAS（Gameplay Ability System）"),
         },
         hasFailures: {
           type: "boolean",
-          description: "Whether there were any failures during this change",
+          description: tr("Whether there were any failures during this change", "本次改动过程中是否出现失败"),
         },
         description: {
           type: "string",
-          description: "Description of the change",
+          description: tr("Description of the change", "改动说明"),
         },
       },
       required: ["modifiedFiles", "fileTypes"],
@@ -238,19 +239,19 @@ export function setupReviewGate(pi: ExtensionAPI): void {
  */
 function formatReviewResult(result: ReviewGateResult): string {
   const lines = [
-    `Review Gate Decision: ${result.decision.toUpperCase()}`,
+    tr(`Review Gate Decision: ${result.decision.toUpperCase()}`, `审查门控决策：${result.decision.toUpperCase()}`),
     ``,
-    `Confidence: ${result.confidence.toFixed(2)}`,
-    `Forced: ${result.forced ? "YES" : "no"}`,
-    `Reason: ${result.reason}`,
+    tr(`Confidence: ${result.confidence.toFixed(2)}`, `置信度：${result.confidence.toFixed(2)}`),
+    tr(`Forced: ${result.forced ? "YES" : "no"}`, `强制：${result.forced ? "是" : "否"}`),
+    tr(`Reason: ${result.reason}`, `原因：${result.reason}`),
   ];
 
   if (result.decision === "strong_review") {
-    lines.push(``, `Action: Use a strong model for detailed code review.`);
+    lines.push(``, tr("Action: Use a strong model for detailed code review.", "操作：使用强模型进行详细代码审查。"));
   } else if (result.decision === "normal_review") {
-    lines.push(``, `Action: Perform a standard review.`);
+    lines.push(``, tr("Action: Perform a standard review.", "操作：执行标准审查。"));
   } else {
-    lines.push(``, `Action: No review needed.`);
+    lines.push(``, tr("Action: No review needed.", "操作：无需审查。"));
   }
 
   return lines.join("\n");

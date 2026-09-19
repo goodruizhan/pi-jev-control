@@ -6,6 +6,7 @@ import { normalizeFailureType, normalizeRecommendedAction, generateFailureSignat
 import { recordFailure, getFailureCountBySignature } from "../state/runtime-state.js";
 import { storeFailureMemory } from "../memory/memory-gate.js";
 import type { FailureType, RecommendedAction } from "../types.js";
+import { tr } from "../i18n.js";
 
 /**
  * Failure Classifier + Retry Judge
@@ -111,12 +112,10 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
     storeFailureMemory(toolName, inputSummary, errorExcerpt, failureType, recommendedAction);
 
     // Append judgment to tool result
-    const judgmentText = [
-      `[Jev failure judgment]`,
-      `type: ${failureType}`,
-      `action: ${recommendedAction}`,
-      `same_failure_count: ${sameFailureCount + 1}`,
-    ].join("\n");
+    const judgmentText = tr(
+      [`[Jev failure judgment]`, `type: ${failureType}`, `action: ${recommendedAction}`, `same_failure_count: ${sameFailureCount + 1}`].join("\n"),
+      [`[Jev 失败判断]`, `类型：${failureType}`, `建议操作：${recommendedAction}`, `相同失败次数：${sameFailureCount + 1}`].join("\n"),
+    );
 
     const augmentedContent = [
       ...event.content,

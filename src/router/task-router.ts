@@ -8,6 +8,7 @@ import { routeModel } from "./model-router.js";
 import type { RouterResult } from "../types.js";
 import { SHORT_CONFIRMATIONS } from "../types.js";
 import { recordModelTierDecision } from "../stats/savings.js";
+import { tr } from "../i18n.js";
 
 /**
  * Task Router — classifies incoming user tasks as cheap/medium/strong/unknown.
@@ -125,7 +126,10 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
     // Notify with tier (debug info)
     if (routerResult.confidence > 0) {
       ctx.ui.notify(
-        `[Jev] Task tier: ${routerResult.tier} (confidence: ${routerResult.confidence.toFixed(2)})`,
+        tr(
+          `[Jev] Task tier: ${routerResult.tier} (confidence: ${routerResult.confidence.toFixed(2)})`,
+          `[Jev] 任务等级：${routerResult.tier}（置信度：${routerResult.confidence.toFixed(2)}）`,
+        ),
         "info",
       );
     }

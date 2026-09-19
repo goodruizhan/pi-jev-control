@@ -1,4 +1,5 @@
 import type { SavingsStats } from "../types.js";
+import { tr } from "../i18n.js";
 
 /**
  * Savings Stats — estimated savings from Jev control layer.
@@ -94,16 +95,30 @@ export function resetSavings(): void {
  * Format savings stats for display.
  */
 export function formatSavings(): string {
-  return [
-    `Savings Estimates (NOT actual API billing)`,
-    `─────────────────────────────────────────`,
-    `Context Candidates Inspected: ${savingsStats.contextCandidatesInspected}`,
-    `Context Candidates Rejected: ${savingsStats.contextCandidatesRejected}`,
-    `Tool Result Chars Pruned: ${savingsStats.toolResultCharsPruned}`,
-    `Tool Result Chars Truncated: ${savingsStats.toolResultCharsTruncated}`,
-    `Memory Records Created: ${savingsStats.memoryRecordsCreated}`,
-    `Retries Prevented: ${savingsStats.retriesPrevented}`,
-    `Model Tier Decisions: ${savingsStats.modelTierDecisions}`,
-    `Est. Context Tokens Saved: ${savingsStats.estimatedContextTokensSaved}`,
-  ].join("\n");
+  return tr(
+    [
+      `Savings Estimates (NOT actual API billing)`,
+      `─────────────────────────────────────────`,
+      `Context Candidates Inspected: ${savingsStats.contextCandidatesInspected}`,
+      `Context Candidates Rejected: ${savingsStats.contextCandidatesRejected}`,
+      `Tool Result Chars Pruned: ${savingsStats.toolResultCharsPruned}`,
+      `Tool Result Chars Truncated: ${savingsStats.toolResultCharsTruncated}`,
+      `Memory Records Created: ${savingsStats.memoryRecordsCreated}`,
+      `Retries Prevented: ${savingsStats.retriesPrevented}`,
+      `Model Tier Decisions: ${savingsStats.modelTierDecisions}`,
+      `Est. Context Tokens Saved: ${savingsStats.estimatedContextTokensSaved}`,
+    ].join("\n"),
+    [
+      `节省量估算（并非实际 API 计费）`,
+      `────────────────────────────`,
+      `已检查上下文候选：${savingsStats.contextCandidatesInspected}`,
+      `已排除上下文候选：${savingsStats.contextCandidatesRejected}`,
+      `已裁剪工具结果字符：${savingsStats.toolResultCharsPruned}`,
+      `已截断工具结果字符：${savingsStats.toolResultCharsTruncated}`,
+      `已创建记忆记录：${savingsStats.memoryRecordsCreated}`,
+      `已阻止重复重试：${savingsStats.retriesPrevented}`,
+      `模型等级决策：${savingsStats.modelTierDecisions}`,
+      `预计节省上下文 Token：${savingsStats.estimatedContextTokensSaved}`,
+    ].join("\n"),
+  );
 }

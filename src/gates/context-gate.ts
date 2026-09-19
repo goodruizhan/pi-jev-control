@@ -7,6 +7,7 @@ import type { Questions } from "@typesafe-ai/sdk";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { recordContextInspected, recordContextRejected } from "../stats/savings.js";
+import { tr } from "../i18n.js";
 
 /**
  * Context Gate — "先筛，再读" (filter first, then read).
@@ -66,19 +67,19 @@ const UE5_INCLUDES = [
 export function setupContextGate(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "jev_search_code",
-    label: "Jev Code Search",
-    description: "Find code files relevant to a task using Jev-powered relevance ranking. Returns ranked file candidates with previews.",
+    label: tr("Jev Code Search", "Jev 代码搜索"),
+    description: tr("Find code files relevant to a task using Jev-powered relevance ranking. Returns ranked file candidates with previews.", "使用 Jev 相关性排序查找与任务相关的代码文件，并返回带预览的候选结果。"),
     parameters: Type.Object({
-      query: Type.String({ description: "Search query describing what to find" }),
-      patterns: Type.Optional(Type.Array(Type.String(), { description: "Additional file path patterns to search" })),
-      roots: Type.Optional(Type.Array(Type.String(), { description: "Root directories to search (defaults to cwd)" })),
-      maxResults: Type.Optional(Type.Number({ description: "Maximum number of results to return (default: 5)" })),
+      query: Type.String({ description: tr("Search query describing what to find", "描述查找目标的搜索查询") }),
+      patterns: Type.Optional(Type.Array(Type.String(), { description: tr("Additional file path patterns to search", "要搜索的附加文件路径模式") })),
+      roots: Type.Optional(Type.Array(Type.String(), { description: tr("Root directories to search (defaults to cwd)", "搜索根目录（默认为当前目录）") })),
+      maxResults: Type.Optional(Type.Number({ description: tr("Maximum number of results to return (default: 5)", "最大返回结果数（默认：5）") })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const config = loadConfig();
       if (!config.enabled || !config.contextGate.enabled) {
         return {
-          content: [{ type: "text", text: "Jev Context Gate is disabled." }],
+          content: [{ type: "text", text: tr("Jev Context Gate is disabled.", "Jev 上下文门控已关闭。") }],
           details: {},
         };
       }
@@ -97,14 +98,14 @@ export function setupContextGate(pi: ExtensionAPI): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return {
-          content: [{ type: "text", text: `Code search failed safely: ${message.slice(0, 300)}` }],
+          content: [{ type: "text", text: tr(`Code search failed safely: ${message.slice(0, 300)}`, `代码搜索已安全失败：${message.slice(0, 300)}`) }],
           details: {},
         };
       }
 
       if (candidates.length === 0) {
         return {
-          content: [{ type: "text", text: "No code candidates found matching the query." }],
+          content: [{ type: "text", text: tr("No code candidates found matching the query.", "没有找到与查询匹配的代码候选项。") }],
           details: {},
         };
       }
@@ -320,19 +321,19 @@ async function rankCandidates(
  */
 function formatResults(results: SearchResult[], lowConfidenceFallback: boolean, rankedByJev: boolean): string {
   if (results.length === 0) {
-    return "No relevant code candidates found.";
+    return tr("No relevant code candidates found.", "没有找到相关代码候选项。");
   }
 
   const lines: string[] = [];
-  if (!rankedByJev) lines.push("Jev ranking unavailable; returning unfiltered ripgrep candidates.", "");
-  if (lowConfidenceFallback) lines.push("No candidate met the relevance threshold; showing the top low-confidence candidates.", "");
+  if (!rankedByJev) lines.push(tr("Jev ranking unavailable; returning unfiltered ripgrep candidates.", "Jev 排序不可用，将返回未经筛选的 ripgrep 候选项。"), "");
+  if (lowConfidenceFallback) lines.push(tr("No candidate met the relevance threshold; showing the top low-confidence candidates.", "没有候选项达到相关性阈值，将显示置信度最高的低置信候选项。"), "");
 
   lines.push(...results.map((r, i) => {
     return [
       `${i + 1}. ${r.path}`,
-      `   relevance: ${r.relevance === null ? "n/a" : r.relevance.toFixed(2)}`,
-      `   line: ${r.line}`,
-      `   preview: ${r.preview || "(empty)"}`,
+      tr(`   relevance: ${r.relevance === null ? "n/a" : r.relevance.toFixed(2)}`, `   相关性：${r.relevance === null ? "无" : r.relevance.toFixed(2)}`),
+      tr(`   line: ${r.line}`, `   行号：${r.line}`),
+      tr(`   preview: ${r.preview || "(empty)"}`, `   预览：${r.preview || "（空）"}`),
       "",
     ].join("\n");
   }));

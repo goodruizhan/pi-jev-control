@@ -117,6 +117,7 @@ export interface JevStats {
 
 export interface JevControlConfig {
   enabled: boolean;
+  language: "en" | "zh-CN";
   jev: {
     model: string;
     timeoutMs: number;

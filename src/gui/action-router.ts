@@ -4,6 +4,7 @@ import { callJev, isJevAvailable } from "../jev/client.js";
 import { choice } from "@typesafe-ai/sdk";
 import type { Questions } from "@typesafe-ai/sdk";
 import type { UIActionCandidate } from "../types.js";
+import { tr } from "../i18n.js";
 
 /**
  * GUI Action Router — selects the best target from candidate UI controls.
@@ -96,28 +97,28 @@ export async function chooseUIAction(
 export function setupGUIActionRouter(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "jev_choose_ui_action",
-    label: "Jev GUI Action Router",
-    description: "Select the best UI control from candidates for a goal using Jev. Returns the best match ID or unknown.",
+    label: tr("Jev GUI Action Router", "Jev GUI 操作路由"),
+    description: tr("Select the best UI control from candidates for a goal using Jev. Returns the best match ID or unknown.", "使用 Jev 从候选项中选择最符合目标的 UI 控件，并返回匹配 ID 或 unknown。"),
     parameters: {
       type: "object",
       properties: {
         goal: {
           type: "string",
-          description: "What action to perform (e.g. 'click the save button')",
+          description: tr("What action to perform (e.g. 'click the save button')", "要执行的操作（例如“点击保存按钮”）"),
         },
         candidates: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              id: { type: "string", description: "Unique identifier for this control" },
-              label: { type: "string", description: "Display label" },
-              role: { type: "string", description: "UI role (button, text, menu, etc.)" },
-              description: { type: "string", description: "Additional description" },
+              id: { type: "string", description: tr("Unique identifier for this control", "此控件的唯一标识符") },
+              label: { type: "string", description: tr("Display label", "显示标签") },
+              role: { type: "string", description: tr("UI role (button, text, menu, etc.)", "UI 角色（按钮、文本、菜单等）") },
+              description: { type: "string", description: tr("Additional description", "附加说明") },
             },
             required: ["id"],
           },
-          description: "Candidate UI controls to choose from",
+          description: tr("Candidate UI controls to choose from", "可供选择的候选 UI 控件"),
         },
       },
       required: ["goal", "candidates"],
@@ -128,7 +129,7 @@ export function setupGUIActionRouter(pi: ExtensionAPI): void {
 
       if (!candidates || candidates.length === 0) {
         return {
-          content: [{ type: "text", text: "No candidates provided." }],
+          content: [{ type: "text", text: tr("No candidates provided.", "未提供候选项。") }],
           details: {},
         };
       }
@@ -153,27 +154,27 @@ function formatGUIActionResult(
   result: { id: string; confidence: number },
 ): string {
   const lines = [
-    `GUI Action Selection`,
-    `Goal: "${goal}"`,
+    tr("GUI Action Selection", "GUI 操作选择"),
+    tr(`Goal: "${goal}"`, `目标：“${goal}”`),
     ``,
   ];
 
   if (result.id === "unknown") {
-    lines.push(`Result: UNKNOWN (insufficient confidence or Jev unavailable)`);
-    lines.push(`Candidates (${candidates.length}):`);
+    lines.push(tr("Result: UNKNOWN (insufficient confidence or Jev unavailable)", "结果：未知（置信度不足或 Jev 不可用）"));
+    lines.push(tr(`Candidates (${candidates.length}):`, `候选项（${candidates.length} 个）：`));
     for (const c of candidates) {
       lines.push(`  - ${c.id}: ${c.label ?? ""} ${c.description ?? ""}`.trim());
     }
   } else {
     const matched = candidates.find((c) => c.id === result.id);
-    lines.push(`Result: ${result.id}`);
-    lines.push(`Confidence: ${result.confidence.toFixed(2)}`);
+    lines.push(tr(`Result: ${result.id}`, `结果：${result.id}`));
+    lines.push(tr(`Confidence: ${result.confidence.toFixed(2)}`, `置信度：${result.confidence.toFixed(2)}`));
     if (matched) {
-      lines.push(`Label: ${matched.label ?? "N/A"}`);
-      lines.push(`Role: ${matched.role ?? "N/A"}`);
-      lines.push(`Description: ${matched.description ?? "N/A"}`);
+      lines.push(tr(`Label: ${matched.label ?? "N/A"}`, `标签：${matched.label ?? "无"}`));
+      lines.push(tr(`Role: ${matched.role ?? "N/A"}`, `角色：${matched.role ?? "无"}`));
+      lines.push(tr(`Description: ${matched.description ?? "N/A"}`, `说明：${matched.description ?? "无"}`));
     }
-    lines.push(``, `Action: Use the matched control with the GUI tool (Computer Use, UE MCP, etc.).`);
+    lines.push(``, tr("Action: Use the matched control with the GUI tool (Computer Use, UE MCP, etc.).", "操作：使用 GUI 工具（Computer Use、UE MCP 等）操作匹配的控件。"));
   }
 
   return lines.join("\n");

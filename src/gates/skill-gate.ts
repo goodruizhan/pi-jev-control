@@ -7,6 +7,7 @@ import type { Questions } from "@typesafe-ai/sdk";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { tr } from "../i18n.js";
 
 /**
  * Skill Gate — select the most relevant Pi skills for the current task.
@@ -38,17 +39,17 @@ const SKILL_DIRS = [
 export function setupSkillGate(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "jev_select_skills",
-    label: "Jev Skill Selection",
-    description: "Select the most relevant Pi skills for the current task using Jev-powered relevance ranking.",
+    label: tr("Jev Skill Selection", "Jev 技能选择"),
+    description: tr("Select the most relevant Pi skills for the current task using Jev-powered relevance ranking.", "使用 Jev 相关性排序为当前任务选择最相关的 Pi 技能。"),
     parameters: Type.Object({
-      query: Type.String({ description: "The current task or goal" }),
-      maxResults: Type.Optional(Type.Number({ description: "Maximum skills to return (default: 4)" })),
+      query: Type.String({ description: tr("The current task or goal", "当前任务或目标") }),
+      maxResults: Type.Optional(Type.Number({ description: tr("Maximum skills to return (default: 4)", "最大返回技能数（默认：4）") })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const config = loadConfig();
       if (!config.enabled || !config.skillGate.enabled) {
         return {
-          content: [{ type: "text", text: "Jev Skill Gate is disabled." }],
+          content: [{ type: "text", text: tr("Jev Skill Gate is disabled.", "Jev 技能门控已关闭。") }],
           details: {},
         };
       }
@@ -60,7 +61,7 @@ export function setupSkillGate(pi: ExtensionAPI): void {
 
       if (skills.length === 0) {
         return {
-          content: [{ type: "text", text: "No skills discovered." }],
+          content: [{ type: "text", text: tr("No skills discovered.", "未发现任何技能。") }],
           details: {},
         };
       }
@@ -223,22 +224,22 @@ async function rankSkills(
  */
 function formatSkills(query: string, skills: SkillCandidate[]): string {
   if (skills.length === 0) {
-    return "No relevant skills found.";
+    return tr("No relevant skills found.", "未找到相关技能。");
   }
 
   const lines = [
-    `Relevant skills for: "${query}"`,
+    tr(`Relevant skills for: "${query}"`, `与“${query}”相关的技能`),
     ``,
   ];
 
   skills.forEach((s, i) => {
     lines.push(`${i + 1}. ${s.name}`);
-    lines.push(`   relevance: ${s.relevance === null ? "n/a" : s.relevance.toFixed(2)}`);
+    lines.push(tr(`   relevance: ${s.relevance === null ? "n/a" : s.relevance.toFixed(2)}`, `   相关性：${s.relevance === null ? "无" : s.relevance.toFixed(2)}`));
     lines.push(`   ${s.description.slice(0, 150)}`);
-    lines.push(`   Path: ${s.path}`);
+    lines.push(tr(`   Path: ${s.path}`, `   路径：${s.path}`));
     lines.push(``);
   });
 
-  lines.push("Use `read` on the Path to load the full skill content.");
+  lines.push(tr("Use `read` on the Path to load the full skill content.", "对该路径使用 `read` 可加载完整技能内容。"));
   return lines.join("\n");
 }

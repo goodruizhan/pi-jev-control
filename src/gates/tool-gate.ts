@@ -8,6 +8,7 @@ import { SAFE_READONLY_TOOLS, SAFE_BASH_COMMANDS, DANGEROUS_BASH_PATTERNS } from
 import { getFailureCountByInput } from "../state/runtime-state.js";
 import { findSimilarFailure } from "../memory/retrieval.js";
 import { recordRetryPrevented } from "../stats/savings.js";
+import { tr } from "../i18n.js";
 
 
 /**
@@ -41,7 +42,10 @@ export function setupToolGate(pi: ExtensionAPI): void {
       recordRetryPrevented();
       return {
         block: true,
-        reason: `This action already failed ${failureCount} time(s). Change the approach or provide new evidence before retrying.`,
+        reason: tr(
+          `This action already failed ${failureCount} time(s). Change the approach or provide new evidence before retrying.`,
+          `此操作已经失败 ${failureCount} 次。请更换方法或提供新证据后再重试。`,
+        ),
       };
     }
 
@@ -51,7 +55,10 @@ export function setupToolGate(pi: ExtensionAPI): void {
         recordRetryPrevented();
         return {
           block: true,
-          reason: `Similar unresolved failure found in memory: ${similarFailure.summary}. Change the approach or resolve the previous issue first.`,
+          reason: tr(
+            `Similar unresolved failure found in memory: ${similarFailure.summary}. Change the approach or resolve the previous issue first.`,
+            `记忆中存在相似且尚未解决的失败：${similarFailure.summary}。请更换方法或先解决之前的问题。`,
+          ),
         };
       }
     }
@@ -71,9 +78,12 @@ export function setupToolGate(pi: ExtensionAPI): void {
       if (risk === "dangerous") {
         return confirmOrBlock(
           ctx,
-          "Dangerous Command",
-          `About to execute: ${command.slice(0, 300)}\n\nThis command may cause data loss. Allow?`,
-          "Blocked — dangerous command was not explicitly confirmed",
+          tr("Dangerous Command", "危险命令"),
+          tr(
+            `About to execute: ${command.slice(0, 300)}\n\nThis command may cause data loss. Allow?`,
+            `即将执行：${command.slice(0, 300)}\n\n此命令可能造成数据丢失，是否允许？`,
+          ),
+          tr("Blocked — dangerous command was not explicitly confirmed", "已阻止——危险命令未获得明确确认"),
         );
       }
     }
@@ -118,14 +128,17 @@ async function judgeUnknownTool(
       // High-risk allow decisions require stronger confidence than ordinary routing.
       if (decision === "allow" && confidence >= 0.85) return;
       if (decision === "deny" && confidence >= 0.7) {
-        return { block: true, reason: "[Jev] Tool Gate denied this operation" };
+        return { block: true, reason: tr("[Jev] Tool Gate denied this operation", "[Jev] 工具门控拒绝了此操作") };
       }
 
       return confirmOrBlock(
         ctx,
-        "Tool Gate Confirmation",
-        `Jev did not produce a high-confidence allow decision for ${toolName}.\n\nInput: ${inputSummary.slice(0, 300)}\n\nAllow?`,
-        "Blocked — uncertain or mutating operation was not confirmed",
+        tr("Tool Gate Confirmation", "工具门控确认"),
+        tr(
+          `Jev did not produce a high-confidence allow decision for ${toolName}.\n\nInput: ${inputSummary.slice(0, 300)}\n\nAllow?`,
+          `Jev 未能对 ${toolName} 给出高置信度的允许决策。\n\n输入：${inputSummary.slice(0, 300)}\n\n是否允许？`,
+        ),
+        tr("Blocked — uncertain or mutating operation was not confirmed", "已阻止——不确定或会产生修改的操作未获得确认"),
       );
     }
   }
@@ -133,9 +146,12 @@ async function judgeUnknownTool(
   // Fail closed: unavailable/failed Jev never silently authorizes an unknown mutation.
   return confirmOrBlock(
     ctx,
-    "Tool Gate Confirmation",
-    `Jev is unavailable. Confirm this unknown or mutating tool call manually.\n\nTool: ${toolName}\nInput: ${inputSummary.slice(0, 300)}`,
-    "Blocked — Jev unavailable and operation was not confirmed",
+    tr("Tool Gate Confirmation", "工具门控确认"),
+    tr(
+      `Jev is unavailable. Confirm this unknown or mutating tool call manually.\n\nTool: ${toolName}\nInput: ${inputSummary.slice(0, 300)}`,
+      `Jev 当前不可用，请手动确认这个未知或会产生修改的工具调用。\n\n工具：${toolName}\n输入：${inputSummary.slice(0, 300)}`,
+    ),
+    tr("Blocked — Jev unavailable and operation was not confirmed", "已阻止——Jev 不可用且操作未获得确认"),
   );
 }
 

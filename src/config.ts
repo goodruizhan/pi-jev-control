@@ -8,6 +8,7 @@ const CONFIG_PATH = path.join(os.homedir(), ".pi", "agent", "jev-control.json");
 /** Default configuration values */
 const DEFAULT_CONFIG: JevControlConfig = {
   enabled: true,
+  language: "en",
   jev: {
     model: "jev-latest",
     timeoutMs: 4000,
@@ -140,4 +141,18 @@ export function invalidateConfig(): void {
  */
 export function getConfigPath(): string {
   return CONFIG_PATH;
+}
+
+/** Persist the UI language in the global Jev Control config. */
+export function saveLanguage(language: JevControlConfig["language"]): void {
+  let config: Record<string, unknown> = {};
+  try {
+    config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
+  } catch {
+    // Missing or invalid config: create a minimal valid file.
+  }
+
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(CONFIG_PATH, `${JSON.stringify({ ...config, language }, null, 2)}\n`, "utf-8");
+  cachedConfig = null;
 }

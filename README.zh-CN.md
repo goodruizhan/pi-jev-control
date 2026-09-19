@@ -6,6 +6,7 @@
 
 ## v0.3 新功能
 
+- **双语界面** — 使用 `/jev language en|zh-CN` 切换面向用户的提示和结果
 - **上下文裁剪** — 通过 `pi.on("context")` 裁剪消息视图中的旧工具输出，不修改磁盘上的会话
   - 工具调用/结果分组器：将调用与结果配对，不留下孤立项
   - 近期消息保护：始终保留最近 8 条消息
@@ -64,6 +65,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 ```json
 {
   "enabled": true,
+  "language": "zh-CN",
   "jev": {
     "model": "jev-latest",
     "timeoutMs": 4000
@@ -122,6 +124,17 @@ pi install git:github.com/goodruizhan/pi-jev-control
 
 项目级配置文件为 `<project>/.pi/jev-control.json`，其中的设置会覆盖全局配置。
 
+### 语言
+
+面向用户的提示、确认框、状态消息和工具结果支持英文与简体中文。英文为默认语言。可在配置中设置 `"language": "zh-CN"`，也可以在 Pi 中切换并持久保存全局语言：
+
+```text
+/jev language en
+/jev language zh-CN
+```
+
+为保持 API 兼容，`allow`、`deny`、`cheap`、`strong` 等内部决策值不会翻译。
+
 ## 自定义工具
 
 - `jev_search_code` — 使用 rg 与 Jev 排序查找与任务相关的代码
@@ -138,6 +151,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 - `/jev stats` — 显示 API 使用统计
 - `/jev savings` — 显示预计节省量（v0.3）
 - `/jev last` — 显示上一次路由决策
+- `/jev language en|zh-CN` — 切换并持久保存界面语言
 - `/jev router on|off` — 开启或关闭任务路由器
 - `/jev toolgate on|off` — 开启或关闭工具门控
 - `/jev retry on|off` — 开启或关闭重试判断器
