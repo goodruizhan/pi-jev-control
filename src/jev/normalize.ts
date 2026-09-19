@@ -4,7 +4,7 @@ import crypto from "node:crypto";
  * Result normalization utilities for Jev responses.
  */
 
-import type { TaskTier, FailureType, RecommendedAction, RouterResult, ToolGateDecision } from "../types.js";
+import type { TaskTier, FailureType, RecommendedAction, RouterResult, ToolGateDecision, AgentType, MemoryType } from "../types.js";
 
 /**
  * Normalize a Jev choice to a valid TaskTier.
@@ -50,6 +50,26 @@ export function normalizeToolGateDecision(choice: string): ToolGateDecision {
     return lower as ToolGateDecision;
   }
   return "confirm"; // default to confirm for unknown decisions
+}
+
+/**
+ * Normalize a Jev choice to a valid AgentType.
+ */
+export function normalizeAgentType(choice: string): AgentType {
+  const lower = choice.toLowerCase().trim();
+  if (lower === "scout" || lower === "coder" || lower === "reviewer" || lower === "unknown") {
+    return lower as AgentType;
+  }
+  return "unknown";
+}
+
+/**
+ * Normalize a Jev choice to a valid MemoryType.
+ */
+export function normalizeMemoryType(choice: string): MemoryType {
+  const lower = choice.toLowerCase().trim();
+  const valid: MemoryType[] = ["fact", "decision", "failure", "constraint", "none"];
+  return valid.includes(lower as MemoryType) ? (lower as MemoryType) : "none";
 }
 
 /**

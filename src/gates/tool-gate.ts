@@ -6,6 +6,7 @@ import { normalizeToolGateDecision } from "../jev/normalize.js";
 import type { ToolGateDecision } from "../types.js";
 import { SAFE_READONLY_TOOLS, SAFE_BASH_COMMANDS, DANGEROUS_BASH_PATTERNS } from "../types.js";
 import { getFailureCountByInput } from "../state/runtime-state.js";
+import { findSimilarFailure } from "../memory/retrieval.js";
 
 
 /**
@@ -74,7 +75,7 @@ export function setupToolGate(pi: ExtensionAPI): void {
         return; // allow
       }
 
-      // ── 3. Repeated failure protection ─────────────────────────
+      // ── 3. Repeated failure protection (runtime state) ───────────
       const inputSummary = command.slice(0, 1500);
       const maxRetries = config.retryJudge.maxSameFailureRetries;
       const failureCount = getFailureCountByInput(toolName, inputSummary);
@@ -84,6 +85,17 @@ export function setupToolGate(pi: ExtensionAPI): void {
           block: true,
           reason: `This action already failed ${failureCount} time(s). Change the approach or provide new evidence before retrying.`,
         };
+      }
+
+      // ── 3b. Check persistent failure memory ─────────────────────
+      if (config.memoryGate.enabled) {
+        const similarFailure = findSimilarFailure(toolName, inputSummary);
+        if (similarFailure && !similarFailure.resolved) {
+          return {
+            block: true,
+            reason: `Similar failure found in memory: ${similarFailure.summary}. \nThis failure is unresolved. Change the approach or resolve the previous issue first.`,
+          };
+        }
       }
 
       // ── 4. Uncertain bash → Jev ────────────────────────────────

@@ -4,6 +4,7 @@ import { callJev, isJevAvailable } from "../jev/client.js";
 import { FAILURE_TYPE_QUESTION, RECOMMENDED_ACTION_QUESTION } from "../jev/questions.js";
 import { normalizeFailureType, normalizeRecommendedAction, generateFailureSignature } from "../jev/normalize.js";
 import { recordFailure, getFailureCountBySignature } from "../state/runtime-state.js";
+import { storeFailureMemory } from "../memory/memory-gate.js";
 import type { FailureType, RecommendedAction } from "../types.js";
 
 /**
@@ -96,7 +97,7 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
     const failureType = normalizeFailureType(result.result.answers.failure_type.choice);
     const recommendedAction = normalizeRecommendedAction(result.result.answers.recommended_action.choice);
 
-    // Record the failure
+    // Record the failure in runtime state
     recordFailure({
       signature,
       toolName,
@@ -105,6 +106,9 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
       failureType,
       recommendedAction,
     });
+
+    // Also store in persistent memory
+    storeFailureMemory(toolName, inputSummary, errorExcerpt, failureType, recommendedAction);
 
     // Append judgment to tool result
     const judgmentText = [

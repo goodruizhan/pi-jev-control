@@ -10,6 +10,10 @@ export const jevStats: JevStats = {
   routerRequests: 0,
   toolGateRequests: 0,
   failureJudgeRequests: 0,
+  contextGateRequests: 0,
+  skillGateRequests: 0,
+  memoryGateRequests: 0,
+  compactionRequests: 0,
 };
 
 /**
@@ -30,6 +34,18 @@ export function recordRequest(module: string, inputTokens: number, outputTokens:
       break;
     case "failureJudge":
       jevStats.failureJudgeRequests += 1;
+      break;
+    case "contextGate":
+      jevStats.contextGateRequests += 1;
+      break;
+    case "skillGate":
+      jevStats.skillGateRequests += 1;
+      break;
+    case "memoryGate":
+      jevStats.memoryGateRequests += 1;
+      break;
+    case "compaction":
+      jevStats.compactionRequests += 1;
       break;
   }
 }
@@ -53,6 +69,10 @@ export function resetStats(): void {
   jevStats.routerRequests = 0;
   jevStats.toolGateRequests = 0;
   jevStats.failureJudgeRequests = 0;
+  jevStats.contextGateRequests = 0;
+  jevStats.skillGateRequests = 0;
+  jevStats.memoryGateRequests = 0;
+  jevStats.compactionRequests = 0;
 }
 
 /**
@@ -72,5 +92,9 @@ export function formatStats(): string {
     `  Router: ${jevStats.routerRequests} calls`,
     `  Tool Gate: ${jevStats.toolGateRequests} calls`,
     `  Failure Judge: ${jevStats.failureJudgeRequests} calls`,
+    `  Context Gate: ${jevStats.contextGateRequests} calls`,
+    `  Skill Gate: ${jevStats.skillGateRequests} calls`,
+    `  Memory Gate: ${jevStats.memoryGateRequests} calls`,
+    `  Compaction: ${jevStats.compactionRequests} calls`,
   ].join("\n");
 }

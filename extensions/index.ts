@@ -6,14 +6,24 @@ import { isJevAvailable, getUnavailableReason } from "../src/jev/client.js";
 import { setupTaskRouter } from "../src/router/task-router.js";
 import { setupToolGate } from "../src/gates/tool-gate.js";
 import { setupFailureClassifier } from "../src/judgment/failure-classifier.js";
+import { setupContextGate } from "../src/gates/context-gate.js";
+import { setupSkillGate } from "../src/gates/skill-gate.js";
+import { setupAgentRouter } from "../src/router/agent-router.js";
+import { analyzeUserInput } from "../src/memory/memory-gate.js";
+import { searchMemory, findSimilarFailure } from "../src/memory/retrieval.js";
+import { clearAllMemory, getMemoryCount, getDataPath } from "../src/memory/store.js";
 import { callJev } from "../src/jev/client.js";
 import { choice } from "@typesafe-ai/sdk";
+import { Type } from "typebox";
 
 
 /**
  * pi-dev-control — Jev-powered control layer for Pi Coding Agent
  *
- * v0.1: Task Router, Model Router, Tool Gate, Failure Classifier, Retry Judge, Stats, /jev commands
+ * v0.2: Task Router, Model Router, Tool Gate, Failure Classifier, Retry Judge, Stats,
+ *        Context Gate (jev_search_code), Skill Gate (jev_select_skills),
+ *        Agent Router (jev_route_agent), Memory Gate, Memory Store, Memory Search,
+ *        Project config override
  */
 
 export default function (pi: ExtensionAPI) {
@@ -34,6 +44,21 @@ export default function (pi: ExtensionAPI) {
 
   // Failure Classifier (tool_result event)
   setupFailureClassifier(pi);
+
+  // Context Gate (jev_search_code tool)
+  setupContextGate(pi);
+
+  // Skill Gate (jev_select_skills tool)
+  setupSkillGate(pi);
+
+  // Agent Router (jev_route_agent tool)
+  setupAgentRouter(pi);
+
+  // Memory Search (jev_memory_search tool)
+  registerMemorySearchTool(pi);
+
+  // Memory Gate (input event for constraint/decision detection)
+  setupMemoryGate(pi);
 
   // ── Register /jev command ───────────────────────────────────────
 
@@ -99,6 +124,47 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      // /jev contextgate on|off — toggle Context Gate
+      if (arg.startsWith("contextgate ")) {
+        const action = arg.split(" ")[1];
+        toggleModule(action, "contextGate", config, ctx);
+        return;
+      }
+
+      // /jev skillgate on|off — toggle Skill Gate
+      if (arg.startsWith("skillgate ")) {
+        const action = arg.split(" ")[1];
+        toggleModule(action, "skillGate", config, ctx);
+        return;
+      }
+
+      // /jev memory on|off — toggle Memory Gate
+      if (arg.startsWith("memory ")) {
+        const action = arg.split(" ")[1];
+        toggleModule(action, "memoryGate", config, ctx);
+        return;
+      }
+
+      // /jev memory clear — clear all memory
+      if (arg === "memory clear") {
+        clearAllMemory();
+        ctx.ui.notify("All memory records cleared.", "info");
+        return;
+      }
+
+      // /jev memory stats — show memory store info
+      if (arg === "memory stats") {
+        const counts = getMemoryCount();
+        ctx.ui.notify(
+          `Memory Store:\n` +
+            `  Path: ${getDataPath()}\n` +
+            `  Memory records: ${counts.memory}\n` +
+            `  Failure records: ${counts.failures}`,
+          "info",
+        );
+        return;
+      }
+
       // /jev reset — reset state and stats
       if (arg === "reset") {
         resetState();
@@ -110,7 +176,7 @@ export default function (pi: ExtensionAPI) {
       // Unknown subcommand
       ctx.ui.notify(
         `Unknown /jev command: "${arg}"\n` +
-          `Available: status, probe, stats, last, router on|off, toolgate on|off, retry on|off, reset`,
+          `Available: status, probe, stats, last, router on|off, toolgate on|off, retry on|off, contextgate on|off, skillgate on|off, memory on|off, memory clear, memory stats, reset`,
         "info",
       );
     },
@@ -125,6 +191,9 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
   const routerStatus = config.router.enabled ? "ON" : "OFF";
   const toolGateStatus = config.toolGate.enabled ? "ON" : "OFF";
   const retryStatus = config.retryJudge.enabled ? "ON" : "OFF";
+  const contextGateStatus = config.contextGate.enabled ? "ON" : "OFF";
+  const skillGateStatus = config.skillGate.enabled ? "ON" : "OFF";
+  const memoryStatus = config.memoryGate.enabled ? "ON" : "OFF";
 
   const lastTier = runtimeState.lastTaskTier ?? "none";
   const lastConfidence = runtimeState.lastTaskConfidence !== undefined
@@ -132,17 +201,17 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     : "N/A";
 
   return [
-    `pi-dev-control v0.1.0`,
+    `pi-dev-control v0.2.0`,
     `Jev API: ${jevStatus}`,
     `Model: ${config.jev.model}`,
     `Timeout: ${config.jev.timeoutMs}ms`,
     `Router: ${routerStatus} (mode: ${config.router.mode})`,
     `Tool Gate: ${toolGateStatus}`,
     `Retry Judge: ${retryStatus}`,
-    `Context Gate: NOT AVAILABLE IN v0.1`,
-    `Skill Gate: NOT AVAILABLE IN v0.1`,
-    `Memory Gate: NOT AVAILABLE IN v0.1`,
-    `Compaction: NOT AVAILABLE IN v0.1`,
+    `Context Gate: ${contextGateStatus}`,
+    `Skill Gate: ${skillGateStatus}`,
+    `Memory Gate: ${memoryStatus}`,
+    `Compaction: NOT AVAILABLE IN v0.2`,
     `Last routing: ${lastTier}`,
     `confidence: ${lastConfidence}`,
     `Config: ${getConfigPath()}`,
@@ -200,7 +269,7 @@ async function runProbe(ctx: import("@earendil-works/pi-coding-agent").Extension
 
 function toggleModule(
   action: string | undefined,
-  moduleName: "router" | "toolGate" | "retryJudge",
+  moduleName: "router" | "toolGate" | "retryJudge" | "contextGate" | "skillGate" | "memoryGate",
   config: ReturnType<typeof loadConfig>,
   ctx: import("@earendil-works/pi-coding-agent").ExtensionCommandContext,
 ): void {
@@ -209,8 +278,15 @@ function toggleModule(
     if (moduleName === "router") config.router.enabled = action === "on";
     else if (moduleName === "toolGate") config.toolGate.enabled = action === "on";
     else if (moduleName === "retryJudge") config.retryJudge.enabled = action === "on";
+    else if (moduleName === "contextGate") config.contextGate.enabled = action === "on";
+    else if (moduleName === "skillGate") config.skillGate.enabled = action === "on";
+    else if (moduleName === "memoryGate") config.memoryGate.enabled = action === "on";
 
-    const label = moduleName === "toolGate" ? "Tool Gate" : moduleName === "retryJudge" ? "Retry Judge" : "Task Router";
+    const label = moduleName === "toolGate" ? "Tool Gate" :
+                  moduleName === "retryJudge" ? "Retry Judge" :
+                  moduleName === "contextGate" ? "Context Gate" :
+                  moduleName === "skillGate" ? "Skill Gate" :
+                  moduleName === "memoryGate" ? "Memory Gate" : "Task Router";
     ctx.ui.notify(`${label}: ${action.toUpperCase()}`, "info");
 
     // Note: /reload required for persistent changes
@@ -218,4 +294,61 @@ function toggleModule(
   } else {
     ctx.ui.notify(`Usage: /jev ${moduleName} on|off`, "info");
   }
+}
+
+// ── Memory Gate setup ─────────────────────────────────────────────
+
+function setupMemoryGate(pi: ExtensionAPI): void {
+  pi.on("input", async (event, ctx) => {
+    // Analyze user input for memory-worthy content
+    await analyzeUserInput(event.text, ctx);
+  });
+}
+
+// ── Memory Search Tool ────────────────────────────────────────────
+
+function registerMemorySearchTool(pi: ExtensionAPI): void {
+  pi.registerTool({
+    name: "jev_memory_search",
+    label: "Jev Memory Search",
+    description: "Search local memory store for relevant information using Jev-powered relevance ranking.",
+    parameters: Type.Object({
+      query: Type.String({ description: "Search query" }),
+      types: Type.Optional(Type.Array(Type.String(), { description: "Filter by memory types: fact, decision, failure, constraint" })),
+      limit: Type.Optional(Type.Number({ description: "Maximum results (default: 5)" })),
+    }),
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const query = params.query as string;
+      const types = params.types as string[] | undefined;
+      const limit = params.limit as number | undefined;
+
+      const result = await searchMemory({ query, types, limit }, signal);
+
+      if (result.records.length === 0) {
+        return {
+          content: [{ type: "text", text: `No memory records found for: "${query}"` }],
+          details: {},
+        };
+      }
+
+      const lines = [
+        `Memory search: "${query}" (${result.totalCandidates} candidates, ${result.totalAfterJev} after Jev)`,
+        ``,
+      ];
+
+      result.records.forEach((r, i) => {
+        lines.push(`${i + 1}. [${r.type}] ${r.summary}`);
+        lines.push(`   date: ${new Date(r.timestamp).toISOString().slice(0, 10)}`);
+        lines.push(`   confidence: ${r.confidence.toFixed(2)}`);
+        lines.push(`   source: ${r.source}`);
+        if (r.resolved !== undefined) lines.push(`   resolved: ${r.resolved}`);
+        lines.push(``);
+      });
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        details: {},
+      };
+    },
+  });
 }

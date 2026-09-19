@@ -8,6 +8,27 @@ export type TaskTier = "cheap" | "medium" | "strong" | "unknown";
 
 export type ToolGateDecision = "allow" | "confirm" | "deny";
 
+// ── Agent Types ───────────────────────────────────────────────────────
+
+export type AgentType = "scout" | "coder" | "reviewer" | "unknown";
+
+// ── Memory Types ──────────────────────────────────────────────────────
+
+export type MemoryType = "fact" | "decision" | "failure" | "constraint" | "none";
+
+export interface MemoryRecord {
+  id: string;
+  timestamp: number;
+  projectHash: string;
+  type: Exclude<MemoryType, "none">;
+  summary: string;
+  rawExcerpt?: string;
+  confidence: number;
+  source: "user" | "tool_result" | "agent";
+  fingerprint: string;
+  resolved?: boolean;
+}
+
 // ── Failure Classification ─────────────────────────────────────────────
 
 export type FailureType =
@@ -79,6 +100,10 @@ export interface JevStats {
   routerRequests: number;
   toolGateRequests: number;
   failureJudgeRequests: number;
+  contextGateRequests: number;
+  skillGateRequests: number;
+  memoryGateRequests: number;
+  compactionRequests: number;
 }
 
 // ── Configuration ───────────────────────────────────────────────────────

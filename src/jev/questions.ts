@@ -1,4 +1,4 @@
-import { choice, noul } from "@typesafe-ai/sdk";
+import { choice, noul, score } from "@typesafe-ai/sdk";
 
 /**
  * Jev questions used across all modules.
@@ -15,6 +15,47 @@ export const TASK_TIER_QUESTION = choice(
     strong: null,
     unknown: null,
   },
+);
+
+// ── Context Relevance (Noul) ─────────────────────────────────────────
+
+export const CONTEXT_RELEVANCE_QUESTION = noul(
+  "Is this code candidate likely relevant to solving the current task?",
+);
+
+// ── Skill Relevance (Noul) ────────────────────────────────────────────
+
+export const SKILL_RELEVANCE_QUESTION = noul(
+  "Is this skill useful for the current task?",
+);
+
+// ── Agent Router ──────────────────────────────────────────────────────
+
+export const AGENT_TYPE_QUESTION = choice(
+  "Choose the best agent type for this task: scout (search/read/locate/filter/gather evidence), coder (implement/fix/standard coding/debug), reviewer (high-risk code review/complex architecture/crash/GC/GAS/threading), or unknown (insufficient information).",
+  {
+    scout: null,
+    coder: null,
+    reviewer: null,
+    unknown: null,
+  },
+);
+
+// ── Memory Type ───────────────────────────────────────────────────────
+
+export const MEMORY_TYPE_QUESTION = choice(
+  "Classify this information's memory type: fact (objective technical fact), decision (architecture/design choice), failure (important error/issue), constraint (user requirement/limitation), or none (not worth remembering).",
+  {
+    fact: null,
+    decision: null,
+    failure: null,
+    constraint: null,
+    none: null,
+  },
+);
+
+export const MEMORY_DURABILITY_QUESTION = noul(
+  "Should this information remain useful beyond the next few turns of the conversation?",
 );
 
 // ── Tool Gate ──────────────────────────────────────────────────────────
