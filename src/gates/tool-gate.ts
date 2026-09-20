@@ -1,8 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import { TOOL_GATE_QUESTION } from "../jev/questions.js";
-import { normalizeToolGateDecision } from "../jev/normalize.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import { choiceOf } from "../judge/ir.js";
+import { TOOL_GATE_QUESTION } from "../judge/questions.js";
+import { normalizeToolGateDecision } from "../judge/normalize.js";
 import type { ToolGateDecision } from "../types.js";
 import { SAFE_READONLY_TOOLS, SAFE_BASH_COMMANDS, DANGEROUS_BASH_PATTERNS } from "../types.js";
 import {
@@ -149,8 +150,8 @@ async function judgeUnknownTool(
   const config = loadConfig();
   const inputSummary = JSON.stringify(toolInput).slice(0, 1500);
 
-  if (isJevAvailable()) {
-    const result = await callJev(
+  if (isJudgeAvailable()) {
+    const result = await judge(
       {
         tool: toolName,
         input_summary: inputSummary,
@@ -161,9 +162,9 @@ async function judgeUnknownTool(
     );
 
     if (result.ok) {
-      const answer = result.result.answers.tool_gate;
-      const decision = normalizeToolGateDecision(answer.choice);
-      const confidence = answer.confidence;
+      const gateAnswer = choiceOf(result.answers.tool_gate);
+      const decision = normalizeToolGateDecision(gateAnswer.choice);
+      const confidence = gateAnswer.confidence;
 
       const policy = resolveJevGatePolicy(decision, confidence, config.toolGate.confirmOnLowConfidence);
       if (policy === "allow") {

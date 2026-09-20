@@ -127,6 +127,8 @@ export interface JevStats {
   reviewRequests: number;
   guiRequests: number;
   decisionRequests: number;
+  /** Per-backend usage, keyed by backend name. */
+  backendUsage: Record<string, { requests: number; failures: number }>;
 }
 
 // ── Configuration ───────────────────────────────────────────────────────
@@ -137,10 +139,17 @@ export interface JevControlConfig {
   ui: {
     notifications: "errors-only" | "important" | "all";
   };
+  /** @deprecated Legacy Jev settings — mapped into judgment.backends.typesafe. Kept for backward compatibility. */
   jev: {
     model: string;
     timeoutMs: number;
   };
+  /**
+   * Judgment backend configuration — which fast judgment model serves the
+   * decision layer. Default backend is "typesafe" (Jev); other backends can
+   * replace it or serve specific modules via judgment.modules.
+   */
+  judgment: JudgmentConfig;
   router: {
     enabled: boolean;
     confidenceThreshold: number;
@@ -212,6 +221,30 @@ export interface JevControlConfig {
 export interface ModelSpec {
   provider: string;
   model: string;
+}
+
+// ── Judgment backend configuration ──────────────────────────────────────
+
+export type JudgmentBackendType = "typesafe-api" | "openai-compatible";
+
+export interface JudgmentBackendConfig {
+  type: JudgmentBackendType;
+  /** Env var holding the API key (never store keys in the config file). */
+  apiKeyEnv?: string;
+  /** API root override — point typesafe-api at a Jev-compatible clone. */
+  baseUrl?: string;
+  model?: string;
+  timeoutMs?: number;
+}
+
+export interface JudgmentConfig {
+  /** Name of the default backend. */
+  backend: string;
+  /** Optional fallback tried when the default backend is unavailable/fails. */
+  fallback?: string;
+  /** Per-module backend overrides, keyed by module name (router, toolGate, ...). */
+  modules?: Record<string, string>;
+  backends: Record<string, JudgmentBackendConfig>;
 }
 
 // ── Short confirmation phrases (not routed) ─────────────────────────────

@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import { REVIEW_NEEDED_QUESTION } from "../jev/questions.js";
-import { normalizeReviewDecision } from "../jev/normalize.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import { choiceOf } from "../judge/ir.js";
+import { REVIEW_NEEDED_QUESTION } from "../judge/questions.js";
+import { normalizeReviewDecision } from "../judge/normalize.js";
 import type { ReviewDecision } from "../types.js";
 import { tr } from "../i18n.js";
 
@@ -110,7 +111,7 @@ export async function judgeReview(
   }
 
   // Step 4: Use Jev to decide
-  if (!isJevAvailable()) {
+  if (!isJudgeAvailable()) {
     return {
       decision: "normal_review",
       confidence: 0,
@@ -135,7 +136,7 @@ export async function judgeReview(
     review_needed: REVIEW_NEEDED_QUESTION,
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "review",
     signal,
   });
@@ -149,8 +150,7 @@ export async function judgeReview(
     };
   }
 
-  const choice = result.result.answers.review_needed.choice;
-  const confidence = result.result.answers.review_needed.confidence;
+  const { choice, confidence } = choiceOf(result.answers.review_needed);
   const decision = normalizeReviewDecision(choice);
 
   return {

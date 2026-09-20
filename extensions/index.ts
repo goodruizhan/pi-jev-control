@@ -4,7 +4,8 @@ import { normalizeLanguage, onOff, tr, trFor } from "../src/i18n.js";
 import { runtimeState, resetState } from "../src/state/runtime-state.js";
 import { resetStats, formatStats } from "../src/stats/stats.js";
 import { resetSavings, formatSavings } from "../src/stats/savings.js";
-import { isJevAvailable, getUnavailableReason } from "../src/jev/client.js";
+import { isJudgeAvailable, getJudgeUnavailableReason, judge } from "../src/judge/facade.js";
+import { allConfiguredBackends } from "../src/judge/registry.js";
 import { setupTaskRouter } from "../src/router/task-router.js";
 import { setupToolGate } from "../src/gates/tool-gate.js";
 import { setupFailureClassifier } from "../src/judgment/failure-classifier.js";
@@ -14,8 +15,7 @@ import { setupAgentRouter } from "../src/router/agent-router.js";
 import { analyzeUserInput } from "../src/memory/memory-gate.js";
 import { searchMemory } from "../src/memory/retrieval.js";
 import { clearAllMemory, ensureMemoryStore, getMemoryCount, getDataPath, markFailureResolved } from "../src/memory/store.js";
-import { callJev } from "../src/jev/client.js";
-import { choice } from "@typesafe-ai/sdk";
+import { choice } from "../src/judge/ir.js";
 import { Type } from "typebox";
 // v0.3 imports
 import { setupContextHook, setupSessionBeforeCompact } from "../src/compaction/context-hook.js";
@@ -339,9 +339,14 @@ export default function (pi: ExtensionAPI) {
 // ── Helper functions ──────────────────────────────────────────────
 
 function buildStatus(config: ReturnType<typeof loadConfig>): string {
-  const jevStatus = isJevAvailable()
+  const jevStatus = isJudgeAvailable()
     ? trFor(config.language, "READY", "就绪")
-    : trFor(config.language, `UNAVAILABLE (${getUnavailableReason() ?? "unknown"})`, `不可用（${getUnavailableReason() ?? "未知原因"}）`);
+    : trFor(config.language, `UNAVAILABLE (${getJudgeUnavailableReason() ?? "unknown"})`, `不可用（${getJudgeUnavailableReason() ?? "未知原因"}）`);
+
+  const backendLines = allConfiguredBackends().map((backend) => {
+    const state = backend.isAvailable() ? "ready" : `unavailable (${backend.unavailableReason() ?? "?"})`;
+    return `    ${backend.name} [${backend.confidenceKind}]: ${state}`;
+  });
 
   const epochInfo = getEpochInfo();
   const epochStatus = epochInfo.hasPlan
@@ -355,9 +360,9 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
 
   return [
     `pi-jev-control v0.5.0`,
-    trFor(config.language, `Jev API: ${jevStatus}`, `Jev API：${jevStatus}`),
+    trFor(config.language, `Judgment: ${jevStatus} (default: ${config.judgment.backend})`, `判断后端：${jevStatus}（默认：${config.judgment.backend}）`),
+    ...backendLines,
     trFor(config.language, `Language: ${config.language}`, `语言：简体中文（zh-CN）`),
-    trFor(config.language, `Model: ${config.jev.model}`, `模型：${config.jev.model}`),
     trFor(config.language, `Timeout: ${config.jev.timeoutMs}ms`, `超时：${config.jev.timeoutMs} 毫秒`),
     trFor(config.language, `Router: ${onOff(config.router.enabled, config.language)} (mode: ${config.router.mode})`, `任务路由：${onOff(config.router.enabled, config.language)}（模式：${config.router.mode}）`),
     trFor(config.language, `Tool Gate: ${onOff(config.toolGate.enabled, config.language)} (mode: ${config.toolGate.mode})`, `工具门控：${onOff(config.toolGate.enabled, config.language)}（模式：${config.toolGate.mode === "advisory" ? "辅助" : "严格"}）`),
@@ -395,7 +400,7 @@ async function runProbe(ctx: import("@earendil-works/pi-coding-agent").Extension
 
   ctx.ui.notify(tr("Running /jev probe...", "正在运行 /jev probe……"), "info");
 
-  const result = await callJev(state, { probe: probeQuestion }, {
+  const result = await judge(state, { probe: probeQuestion }, {
     module: "router",
   });
 
@@ -411,11 +416,11 @@ async function runProbe(ctx: import("@earendil-works/pi-coding-agent").Extension
     return;
   }
 
-  const answer = result.result.answers.probe;
+  const answer = result.answers.probe;
   ctx.ui.notify(
     tr(
-      `[Jev probe SUCCESS]\nmodel: ${result.result.model}\nchoice: ${answer.choice}\nconfidence: ${answer.confidence.toFixed(4)}\nprobabilities: ${JSON.stringify(answer.probabilities)}\ninput_tokens: ${result.result.usage.input_tokens}\noutput_tokens: ${result.result.usage.output_tokens}\nlatency: ${result.latencyMs}ms`,
-      `[Jev 测试成功]\n模型：${result.result.model}\n选择：${answer.choice}\n置信度：${answer.confidence.toFixed(4)}\n概率：${JSON.stringify(answer.probabilities)}\n输入 token：${result.result.usage.input_tokens}\n输出 token：${result.result.usage.output_tokens}\n延迟：${result.latencyMs} 毫秒`,
+      `[Jev probe SUCCESS]\nbackend: ${result.backend}\nmodel: ${result.model}\nchoice: ${answer.type === "choice" ? answer.choice : "?"}\nconfidence: ${answer.type !== "noul" ? answer.confidence.toFixed(4) : "?"}\nprobabilities: ${JSON.stringify(answer.type !== "noul" ? answer.probabilities : answer.noul)}\ninput_tokens: ${result.usage.input_tokens}\noutput_tokens: ${result.usage.output_tokens}\nlatency: ${result.latencyMs}ms`,
+      `[Jev 测试成功]\n后端：${result.backend}\n模型：${result.model}\n选择：${answer.type === "choice" ? answer.choice : "?"}\n置信度：${answer.type !== "noul" ? answer.confidence.toFixed(4) : "?"}\n概率：${JSON.stringify(answer.type !== "noul" ? answer.probabilities : answer.noul)}\n输入 token：${result.usage.input_tokens}\n输出 token：${result.usage.output_tokens}\n延迟：${result.latencyMs} 毫秒`,
     ),
     "info",
   );

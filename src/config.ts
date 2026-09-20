@@ -16,6 +16,19 @@ const DEFAULT_CONFIG: JevControlConfig = {
     model: "jev-latest",
     timeoutMs: 4000,
   },
+  judgment: {
+    // Default decision backend; "typesafe" = Jev via the TypeSafe API.
+    // Add more entries under backends and point judgment.backend (or
+    // judgment.modules.<module>) at them to swap the judgment model.
+    backend: "typesafe",
+    backends: {
+      typesafe: {
+        type: "typesafe-api",
+        apiKeyEnv: "TYPESAFE_API_KEY",
+        // model/timeoutMs fall back to the legacy jev.* values below.
+      },
+    },
+  },
   router: {
     enabled: true,
     confidenceThreshold: 0.7,
@@ -115,8 +128,33 @@ export function loadConfig(): JevControlConfig {
     // Project config doesn't exist — use global
   }
 
-  cachedConfig = deepMerge(DEFAULT_CONFIG, merged as Partial<JevControlConfig> & Record<string, unknown>);
+  cachedConfig = normalizeJudgmentConfig(
+    deepMerge(DEFAULT_CONFIG, merged as Partial<JevControlConfig> & Record<string, unknown>),
+  );
   return cachedConfig!
+}
+
+/**
+ * Backward compatibility: the legacy top-level jev.{model,timeoutMs} section
+ * keeps working by filling gaps in judgment.backends.typesafe. Ensures the
+ * typesafe backend entry always exists and judgment.backend is valid.
+ */
+function normalizeJudgmentConfig(config: JevControlConfig): JevControlConfig {
+  const judgment = config.judgment;
+  judgment.backends = judgment.backends ?? {};
+  const typesafe = judgment.backends["typesafe"] ?? { type: "typesafe-api" as const };
+  typesafe.type = typesafe.type ?? "typesafe-api";
+  typesafe.apiKeyEnv = typesafe.apiKeyEnv ?? "TYPESAFE_API_KEY";
+  typesafe.model = typesafe.model ?? config.jev.model;
+  typesafe.timeoutMs = typesafe.timeoutMs ?? config.jev.timeoutMs;
+  judgment.backends["typesafe"] = typesafe;
+  if (!judgment.backend || !judgment.backends[judgment.backend]) {
+    judgment.backend = "typesafe";
+  }
+  if (judgment.fallback && !judgment.backends[judgment.fallback]) {
+    delete judgment.fallback;
+  }
+  return config;
 }
 
 /**

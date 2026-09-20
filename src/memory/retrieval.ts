@@ -1,9 +1,9 @@
 import type { MemoryRecord, MemoryType } from "../types.js";
 import { readAllMemory, readAllFailures } from "./store.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import type { Questions } from "@typesafe-ai/sdk";
-import { noul } from "@typesafe-ai/sdk";
-import { generateActionFingerprint } from "../jev/normalize.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import type { Questions } from "../judge/ir.js";
+import { noul } from "../judge/ir.js";
+import { generateActionFingerprint } from "../judge/normalize.js";
 
 /**
  * Memory Retrieval — search local memory store, then use Jev for relevance ranking.
@@ -64,7 +64,7 @@ export async function searchMemory(
   }
 
   // Step 2: Jev relevance ranking (if available)
-  if (isJevAvailable() && candidates.length > 0) {
+  if (isJudgeAvailable() && candidates.length > 0) {
     try {
       const ranked = await rankWithJev(query, candidates, signal);
       return {
@@ -110,7 +110,7 @@ async function rankWithJev(
     })),
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "memoryGate",
     signal,
   });
@@ -121,7 +121,7 @@ async function rankWithJev(
 
   // Sort by relevance probability descending
   const scored = candidates.map((r, i) => {
-    const answer = result.result.answers[`rel_${i}`] as { noul: number } | undefined;
+    const answer = result.answers[`rel_${i}`] as { noul: number } | undefined;
     return {
       record: r,
       relevance: answer?.noul ?? 0,

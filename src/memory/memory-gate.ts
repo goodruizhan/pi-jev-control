@@ -1,11 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import { MEMORY_TYPE_QUESTION, MEMORY_DURABILITY_QUESTION } from "../jev/questions.js";
-import { normalizeMemoryType } from "../jev/normalize.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import { choiceOf } from "../judge/ir.js";
+import { MEMORY_TYPE_QUESTION, MEMORY_DURABILITY_QUESTION } from "../judge/questions.js";
+import { normalizeMemoryType } from "../judge/normalize.js";
 import type { MemoryType, MemoryRecord } from "../types.js";
 import { appendMemory, appendFailure, getProjectHash, upsertFailure } from "./store.js";
-import { generateActionFingerprint } from "../jev/normalize.js";
+import { generateActionFingerprint } from "../judge/normalize.js";
 import { recordMemoryCreated } from "../stats/savings.js";
 import crypto from "node:crypto";
 import { tr } from "../i18n.js";
@@ -94,7 +95,7 @@ export async function analyzeUserInput(
   if (!isConstraint && !isDecision) return;
 
   // Check Jev availability
-  if (!isJevAvailable()) return;
+  if (!isJudgeAvailable()) return;
 
   // Use Jev to classify memory type and durability
   const state = {
@@ -107,15 +108,15 @@ export async function analyzeUserInput(
     durable: MEMORY_DURABILITY_QUESTION,
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "memoryGate",
     signal: ctx.signal,
   });
 
   if (!result.ok) return;
 
-  const memoryType = normalizeMemoryType(result.result.answers.memory_type.choice);
-  const durableProb = (result.result.answers.durable as { noul: number }).noul;
+  const memoryType = normalizeMemoryType(choiceOf(result.answers.memory_type).choice);
+  const durableProb = (result.answers.durable as { noul: number }).noul;
 
   // Write condition: memory_type != none AND durable probability >= 0.65
   if (memoryType === "none" || durableProb < 0.65) return;

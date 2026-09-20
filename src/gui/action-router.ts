@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import { choice } from "@typesafe-ai/sdk";
-import type { Questions } from "@typesafe-ai/sdk";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import { choice } from "../judge/ir.js";
+import type { Questions } from "../judge/ir.js";
 import type { UIActionCandidate } from "../types.js";
 import { tr } from "../i18n.js";
 import crypto from "node:crypto";
@@ -45,7 +45,7 @@ export async function chooseUIAction(
     recordGUIRiskDeferral();
     return { id: "unknown", confidence: 1, risk: "needs_user" };
   }
-  if (!isJevAvailable()) {
+  if (!isJudgeAvailable()) {
     return { id: "unknown", confidence: 0, risk: "low" };
   }
 
@@ -97,7 +97,7 @@ export async function chooseUIAction(
     ui_action: question,
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "gui",
     signal,
     timeoutMs: config.guiRouter.timeoutMs,
@@ -107,7 +107,7 @@ export async function chooseUIAction(
     return { id: "unknown", confidence: 0, risk: "low" };
   }
 
-  const choiceAnswer = result.result.answers.ui_action as { choice: string; confidence: number };
+  const choiceAnswer = result.answers.ui_action as { choice: string; confidence: number };
   const id = optionToCandidate.get(choiceAnswer.choice)?.id ?? "unknown";
   const confidence = choiceAnswer.confidence;
 

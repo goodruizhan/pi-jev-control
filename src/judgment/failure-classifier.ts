@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import { FAILURE_TYPE_QUESTION, RECOMMENDED_ACTION_QUESTION } from "../jev/questions.js";
-import { generateFailureSignature, normalizeFailureType, normalizeRecommendedAction } from "../jev/normalize.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import { choiceOf } from "../judge/ir.js";
+import { FAILURE_TYPE_QUESTION, RECOMMENDED_ACTION_QUESTION } from "../judge/questions.js";
+import { generateFailureSignature, normalizeFailureType, normalizeRecommendedAction } from "../judge/normalize.js";
 import { getFailureCountByActionKey, getFailureCountByFamily, recordFailure } from "../state/runtime-state.js";
 import { storeFailureMemory } from "../memory/memory-gate.js";
 import type { FailureType, RecommendedAction } from "../types.js";
@@ -45,9 +46,9 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
       });
     }
 
-    if (!isJevAvailable()) return appendUnavailableAssessment(event, "unavailable", "Jev API unavailable");
+    if (!isJudgeAvailable()) return appendUnavailableAssessment(event, "unavailable", "Jev API unavailable");
 
-    const result = await callJev(
+    const result = await judge(
       {
         tool: toolName,
         command: command.slice(0, 1000),
@@ -70,8 +71,8 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
 
     return appendAssessment(event, {
       signature, actionKey, commandCategory, toolName, inputSummary, errorExcerpt,
-      failureType: normalizeFailureType(result.result.answers.failure_type.choice),
-      recommendedAction: normalizeRecommendedAction(result.result.answers.recommended_action.choice),
+      failureType: normalizeFailureType(choiceOf(result.answers.failure_type).choice),
+      recommendedAction: normalizeRecommendedAction(choiceOf(result.answers.recommended_action).choice),
       sameFailureCount,
       source: "jev",
     });

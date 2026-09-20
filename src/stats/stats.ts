@@ -18,15 +18,16 @@ export const jevStats: JevStats = {
   reviewRequests: 0,
   guiRequests: 0,
   decisionRequests: 0,
+  backendUsage: {},
 };
 
 /**
  * Record a successful Jev request.
  */
-export function recordRequest(module: string, inputTokens: number, outputTokens: number, latencyMs: number): void {
+export function recordRequest(module: string, usage: { input_tokens: number; output_tokens: number }, latencyMs: number): void {
   jevStats.requests += 1;
-  jevStats.inputTokens += inputTokens;
-  jevStats.outputTokens += outputTokens;
+  jevStats.inputTokens += usage.input_tokens;
+  jevStats.outputTokens += usage.output_tokens;
   jevStats.totalLatencyMs += latencyMs;
 
   switch (module) {
@@ -64,10 +65,20 @@ export function recordRequest(module: string, inputTokens: number, outputTokens:
 }
 
 /**
- * Record a Jev API failure.
+ * Record a judgment request failure.
  */
-export function recordFailure(): void {
+export function recordFailure(_module?: string): void {
   jevStats.failures += 1;
+}
+
+/**
+ * Record per-backend usage (which judgment model actually served requests).
+ */
+export function recordBackendUsage(backendName: string, ok: boolean): void {
+  const entry = jevStats.backendUsage[backendName] ?? { requests: 0, failures: 0 };
+  entry.requests += 1;
+  if (!ok) entry.failures += 1;
+  jevStats.backendUsage[backendName] = entry;
 }
 
 /**
@@ -89,6 +100,7 @@ export function resetStats(): void {
   jevStats.reviewRequests = 0;
   jevStats.guiRequests = 0;
   jevStats.decisionRequests = 0;
+  jevStats.backendUsage = {};
 }
 
 /**
@@ -116,6 +128,7 @@ export function formatStats(): string {
       `  Review Gate: ${jevStats.reviewRequests} calls`,
       `  GUI Action Router: ${jevStats.guiRequests} calls`,
       `  Decision Copilot: ${jevStats.decisionRequests} calls`,
+      `  Backends: ${formatBackendUsage()}`,
     ].join("\n"),
     [
       `Jev API 使用情况`,
@@ -132,6 +145,13 @@ export function formatStats(): string {
       `  审查门控：${jevStats.reviewRequests} 次`,
       `  GUI 操作路由：${jevStats.guiRequests} 次`,
       `  决策副驾驶：${jevStats.decisionRequests} 次`,
+      `  后端：${formatBackendUsage()}`,
     ].join("\n"),
   );
+}
+
+function formatBackendUsage(): string {
+  const entries = Object.entries(jevStats.backendUsage);
+  if (entries.length === 0) return "-";
+  return entries.map(([name, usage]) => `${name} ${usage.requests}${usage.failures > 0 ? ` (${usage.failures} failed)` : ""}`).join(", ");
 }

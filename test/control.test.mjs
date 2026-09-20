@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { classifyShellCommand, setupToolGate } from "../dist/src/gates/tool-gate.js";
 import { loadConfig } from "../dist/src/config.js";
-import { resetClient } from "../dist/src/jev/client.js";
+import { resetJudgeBackends as resetClient } from "../dist/src/judge/registry.js";
 import { judgeReview } from "../dist/src/review/review-gate.js";
 import extension from "../dist/extensions/index.js";
 

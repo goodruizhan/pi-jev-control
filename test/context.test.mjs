@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { setupContextGate } from "../dist/src/gates/context-gate.js";
 import { loadConfig } from "../dist/src/config.js";
-import { resetClient } from "../dist/src/jev/client.js";
+import { resetJudgeBackends as resetClient } from "../dist/src/judge/registry.js";
 
 test("context search returns real path, line, and preview on Windows", async () => {
   const originalKey = process.env.TYPESAFE_API_KEY;

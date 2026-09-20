@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
 import { Type } from "typebox";
-import { noul } from "@typesafe-ai/sdk";
-import type { Questions } from "@typesafe-ai/sdk";
+import { noul } from "../judge/ir.js";
+import type { Questions } from "../judge/ir.js";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -117,7 +117,7 @@ export function setupContextGate(pi: ExtensionAPI): void {
       let ranked = candidates;
       let rankedByJev = false;
 
-      if (isJevAvailable() && candidates.length > 0) {
+      if (isJudgeAvailable() && candidates.length > 0) {
         try {
           ranked = await rankCandidates(query, candidates, signal);
           rankedByJev = true;
@@ -310,7 +310,7 @@ async function rankCandidates(
     })),
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "contextGate",
     signal,
   });
@@ -321,7 +321,7 @@ async function rankCandidates(
 
   // Sort by relevance probability descending
   const scored = candidates.map((c, i) => {
-    const answer = result.result.answers[`rel_${i}`] as { noul: number } | undefined;
+    const answer = result.answers[`rel_${i}`] as { noul: number } | undefined;
     return {
       ...c,
       relevance: answer?.noul ?? 0,

@@ -1,8 +1,8 @@
-import { choice, noul } from "@typesafe-ai/sdk";
+import { choice, noul } from "./ir.js";
 
 /**
- * Jev questions used across all modules.
- * These are the System One question definitions sent to Jev.
+ * Judgment questions used across all modules.
+ * Backend-neutral IR definitions — any judgment backend can answer them.
  */
 
 // ── Task Router ────────────────────────────────────────────────────────

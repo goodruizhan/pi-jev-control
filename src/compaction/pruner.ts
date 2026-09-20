@@ -1,8 +1,8 @@
 import type { PiMessage, ToolGroup, PruningPlan, PruningDecision } from "../types.js";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import type { Questions } from "@typesafe-ai/sdk";
-import { noul } from "@typesafe-ai/sdk";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import type { Questions } from "../judge/ir.js";
+import { noul } from "../judge/ir.js";
 import crypto from "node:crypto";
 
 /**
@@ -229,7 +229,7 @@ export async function decidePruning(
   if (groups.length === 0) return decisions;
 
   // If Jev unavailable, keep all
-  if (!isJevAvailable()) {
+  if (!isJudgeAvailable()) {
     for (const g of groups) decisions.set(g.groupId, "KEEP_RAW");
     return decisions;
   }
@@ -264,7 +264,7 @@ export async function decidePruning(
     })),
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "compaction",
     signal,
   });
@@ -279,8 +279,8 @@ export async function decidePruning(
     const g = candidateGroups[i];
 
     // Get Jev answers
-    const usefulAnswer = result.result.answers[`useful_${i}`] as { noul: number } | undefined;
-    const mistakeAnswer = result.result.answers[`mistake_${i}`] as { noul: number } | undefined;
+    const usefulAnswer = result.answers[`useful_${i}`] as { noul: number } | undefined;
+    const mistakeAnswer = result.answers[`mistake_${i}`] as { noul: number } | undefined;
     const usefulness = usefulAnswer?.noul ?? 0.5; // default to keep on missing
     const repeatMistake = mistakeAnswer?.noul ?? 0.3; // default to keep on missing
 
@@ -426,7 +426,7 @@ export async function buildPruningPlan(
   const local = buildDeterministicPruningDecisions(oldGroups, recentGroups);
   for (const [id, dec] of local.decisions) decisions.set(id, dec);
 
-  if (local.unresolved.length > 0 && isJevAvailable()) {
+  if (local.unresolved.length > 0 && isJudgeAvailable()) {
     const oldDecisions = await decidePruning(local.unresolved, signal);
     for (const [id, dec] of oldDecisions) {
       decisions.set(id, dec);

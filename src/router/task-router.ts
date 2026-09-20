@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import { TASK_TIER_QUESTION } from "../jev/questions.js";
-import { buildRouterResult } from "../jev/normalize.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import { TASK_TIER_QUESTION } from "../judge/questions.js";
+import { buildRouterResult } from "../judge/normalize.js";
 import { runtimeState } from "../state/runtime-state.js";
 import { routeModel } from "./model-router.js";
 import type { RouterResult } from "../types.js";
@@ -60,7 +60,7 @@ export async function routeTask(
   if (config.router.mode === "set-model" && !hasConfiguredRouterTarget(config.router.models)) return null;
 
   // Check Jev availability — if unavailable, skip routing entirely
-  if (!isJevAvailable()) return null;
+  if (!isJudgeAvailable()) return null;
 
   // Build minimal state — only current task, no history
   const state = {
@@ -72,7 +72,7 @@ export async function routeTask(
     task_tier: TASK_TIER_QUESTION,
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "router",
     signal,
   });
@@ -83,8 +83,9 @@ export async function routeTask(
     return null;
   }
 
-  const answer = result.result.answers.task_tier;
-  const routerResult = buildRouterResult(answer.choice, answer.confidence, result.latencyMs, result.result.model);
+  const answer = result.answers.task_tier;
+  const choiceAnswer = answer.type === "choice" ? answer : { choice: "unknown", confidence: 0 };
+  const routerResult = buildRouterResult(choiceAnswer.choice, choiceAnswer.confidence, result.latencyMs, result.model);
 
   // Check confidence threshold
   const threshold = config.router.confidenceThreshold;

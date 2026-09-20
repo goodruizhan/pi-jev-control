@@ -1,6 +1,6 @@
 import type { FailureRecord } from "../types.js";
 import { getFailureCountBySignature } from "../state/runtime-state.js";
-import { generateFailureSignature } from "../jev/normalize.js";
+import { generateFailureSignature } from "../judge/normalize.js";
 import { loadConfig } from "../config.js";
 
 /**

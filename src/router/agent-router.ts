@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
-import { AGENT_TYPE_QUESTION } from "../jev/questions.js";
-import { normalizeAgentType } from "../jev/normalize.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
+import { choiceOf } from "../judge/ir.js";
+import { AGENT_TYPE_QUESTION } from "../judge/questions.js";
+import { normalizeAgentType } from "../judge/normalize.js";
 import { Type } from "typebox";
 import type { AgentType } from "../types.js";
 import { tr } from "../i18n.js";
@@ -47,7 +48,7 @@ export function setupAgentRouter(pi: ExtensionAPI): void {
       }
       const query = (params.query as string).trim().slice(0, 1000);
 
-      if (!isJevAvailable()) {
+      if (!isJudgeAvailable()) {
         return {
           content: [{ type: "text", text: tr("Jev API unavailable — cannot route agent.", "Jev API 不可用——无法进行代理路由。") }],
           details: {},
@@ -75,7 +76,7 @@ export function setupAgentRouter(pi: ExtensionAPI): void {
         agent_type: AGENT_TYPE_QUESTION,
       };
 
-      const result = await callJev(state, questions, {
+      const result = await judge(state, questions, {
         module: "router",
         signal,
       });
@@ -87,8 +88,7 @@ export function setupAgentRouter(pi: ExtensionAPI): void {
         };
       }
 
-      const choice = result.result.answers.agent_type.choice;
-      const confidence = result.result.answers.agent_type.confidence;
+      const { choice, confidence } = choiceOf(result.answers.agent_type);
       const agent = normalizeAgentType(choice);
 
       const output = formatAgentRoute(query, agent, confidence, availableSubagents);

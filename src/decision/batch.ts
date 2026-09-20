@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { choice } from "@typesafe-ai/sdk";
-import type { Questions } from "@typesafe-ai/sdk";
+import { choice } from "../judge/ir.js";
+import type { Questions } from "../judge/ir.js";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
 import { recordDecisionBudgetSkip, recordDecisionCacheHit } from "../stats/savings.js";
 import { tr } from "../i18n.js";
 
@@ -79,7 +79,7 @@ export async function decideBatch(
     recordDecisionBudgetSkip();
     return { status: "skipped", decisions: {}, reason: "turn_budget" };
   }
-  if (!isJevAvailable()) return { status: "unavailable", decisions: unknownDecisions(questions), reason: "jev_unavailable" };
+  if (!isJudgeAvailable()) return { status: "unavailable", decisions: unknownDecisions(questions), reason: "jev_unavailable" };
 
   callsThisTurn += 1;
   const sdkQuestions: Questions = {};
@@ -100,7 +100,7 @@ export async function decideBatch(
     );
   });
 
-  const result = await callJev(
+  const result = await judge(
     {
       goal: boundedGoal,
       context: boundedState,
@@ -123,7 +123,7 @@ export async function decideBatch(
   const decisions: BatchDecisionResult["decisions"] = {};
   questions.forEach((question, index) => {
     const internalId = `q_${index}`;
-    const answer = result.result.answers[internalId] as { choice: string; confidence: number; probabilities?: Record<string, number> };
+    const answer = result.answers[internalId] as { choice: string; confidence: number; probabilities?: Record<string, number> };
     const map = optionMaps.get(internalId)!;
     const rawChoice = map.get(answer.choice) ?? "unknown";
     const confidence = Number.isFinite(answer.confidence) ? answer.confidence : 0;

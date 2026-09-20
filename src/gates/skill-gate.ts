@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import { callJev, isJevAvailable } from "../jev/client.js";
+import { judge, isJudgeAvailable } from "../judge/facade.js";
 import { Type } from "typebox";
-import { noul } from "@typesafe-ai/sdk";
-import type { Questions } from "@typesafe-ai/sdk";
+import { noul } from "../judge/ir.js";
+import type { Questions } from "../judge/ir.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -71,7 +71,7 @@ export function setupSkillGate(pi: ExtensionAPI): void {
       let ranked = skills;
       let rankedByJev = false;
 
-      if (isJevAvailable() && skills.length > 0) {
+      if (isJudgeAvailable() && skills.length > 0) {
         try {
           ranked = await rankSkills(query, skills, signal);
           rankedByJev = true;
@@ -198,7 +198,7 @@ async function rankSkills(
     })),
   };
 
-  const result = await callJev(state, questions, {
+  const result = await judge(state, questions, {
     module: "skillGate",
     signal,
   });
@@ -209,7 +209,7 @@ async function rankSkills(
 
   // Sort by relevance probability descending
   const scored = skills.map((s, i) => {
-    const answer = result.result.answers[`rel_${i}`] as { noul: number } | undefined;
+    const answer = result.answers[`rel_${i}`] as { noul: number } | undefined;
     return {
       ...s,
       relevance: answer?.noul ?? 0,

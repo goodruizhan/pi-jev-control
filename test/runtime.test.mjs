@@ -5,7 +5,7 @@ import { getActionKey } from "../dist/src/action-context.js";
 import { isBenignShellOutcome, isFailureEvent } from "../dist/src/judgment/failure-classifier.js";
 import { setupToolGate } from "../dist/src/gates/tool-gate.js";
 import { loadConfig } from "../dist/src/config.js";
-import { resetClient } from "../dist/src/jev/client.js";
+import { resetJudgeBackends as resetClient } from "../dist/src/judge/registry.js";
 import {
   getFailureCountByActionKey,
   getFailureCountByFamily,
