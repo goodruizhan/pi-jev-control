@@ -25,9 +25,10 @@ interface SkillCandidate {
   relevance: number | null;
 }
 
-// Directories to scan for skills
-const SKILL_DIRS = [
+// Directories to scan for skills (exported for tests)
+export const SKILL_DIRS = [
   path.join(os.homedir(), ".pi", "agent", "skills"),
+  path.join(os.homedir(), ".pi", "agent", "pi-hermes-memory", "skills"),
   path.join(os.homedir(), ".agents", "skills"),
   path.join(process.cwd(), ".pi", "skills"),
   path.join(process.cwd(), ".agents", "skills"),

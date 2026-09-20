@@ -38,7 +38,6 @@ test("review gate falls back conservatively and forces core-system review", asyn
 
   const fallback = await judgeReview(base);
   assert.equal(fallback.decision, "normal_review");
-
   const core = await judgeReview({ ...base, isCoreSystem: true });
   assert.equal(core.decision, "strong_review");
   assert.equal(core.forced, true);
@@ -48,42 +47,29 @@ test("review gate falls back conservatively and forces core-system review", asyn
   resetClient();
 });
 
-test("unknown and mutating tools fail closed when Jev is unavailable", async () => {
+function createToolGateHarness() {
+  const handlers = new Map();
+  setupToolGate({ on: (event, handler) => handlers.set(event, handler) });
+  return handlers.get("tool_call");
+}
+
+test("enforce mode fails closed when Jev is unavailable", async () => {
   const originalKey = process.env.TYPESAFE_API_KEY;
   delete process.env.TYPESAFE_API_KEY;
   resetClient();
 
-  const handlers = new Map();
-  setupToolGate({ on: (event, handler) => handlers.set(event, handler) });
-  const handler = handlers.get("tool_call");
-  assert.ok(handler);
-
+  const handler = createToolGateHarness();
   const config = loadConfig();
   config.enabled = true;
   config.toolGate.enabled = true;
+  config.toolGate.mode = "enforce";
   config.memoryGate.enabled = false;
   let confirmations = 0;
-  const ctx = {
-    signal: undefined,
-    ui: {
-      confirm: async () => {
-        confirmations += 1;
-        return false;
-      },
-    },
-  };
+  const ctx = { signal: undefined, ui: { confirm: async () => { confirmations += 1; return false; } } };
 
-  const unknown = await handler(
-    { type: "tool_call", toolCallId: "1", toolName: "bash", input: { command: "npm install left-pad" } },
-    ctx,
-  );
+  const unknown = await handler({ toolName: "bash", input: { command: "npm install left-pad" } }, ctx);
   assert.equal(unknown?.block, true);
-  assert.equal(confirmations, 1);
-
-  const write = await handler(
-    { type: "tool_call", toolCallId: "2", toolName: "write", input: { path: "x", content: "y" } },
-    ctx,
-  );
+  const write = await handler({ toolName: "write", input: { path: "x", content: "y" } }, ctx);
   assert.equal(write?.block, true);
   assert.equal(confirmations, 2);
 
@@ -92,13 +78,40 @@ test("unknown and mutating tools fail closed when Jev is unavailable", async () 
   resetClient();
 });
 
+test("advisory mode never confirms or blocks when Jev is unavailable", async () => {
+  const originalKey = process.env.TYPESAFE_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
+  resetClient();
+
+  const handler = createToolGateHarness();
+  const config = loadConfig();
+  config.enabled = true;
+  config.toolGate.enabled = true;
+  config.toolGate.mode = "advisory";
+  config.memoryGate.enabled = false;
+  let confirmations = 0;
+  const ctx = {
+    signal: undefined,
+    ui: {
+      confirm: async () => { confirmations += 1; return false; },
+      notify() {},
+    },
+  };
+
+  const write = await handler({ toolName: "write", input: { path: "x", content: "y" } }, ctx);
+  const dangerous = await handler({ toolName: "bash", input: { command: "rm -rf ./victim" } }, ctx);
+  assert.equal(write, undefined);
+  assert.equal(dangerous, undefined);
+  assert.equal(confirmations, 0);
+
+  if (originalKey === undefined) delete process.env.TYPESAFE_API_KEY;
+  else process.env.TYPESAFE_API_KEY = originalKey;
+  resetClient();
+});
+
 test("memory stats command is reachable", async () => {
   let command;
-  const pi = {
-    on() {},
-    registerTool() {},
-    registerCommand(_name, definition) { command = definition; },
-  };
+  const pi = { on() {}, registerTool() {}, registerCommand(_name, definition) { command = definition; } };
   extension(pi);
   const notifications = [];
   await command.handler("memory stats", { ui: { notify: (message) => notifications.push(message) } });

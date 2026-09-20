@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeDecisionQuestions } from "./dist/src/decision/batch.js";
-import { buildDeterministicPruningDecisions } from "./dist/src/compaction/pruner.js";
-import { chooseUIAction } from "./dist/src/gui/action-router.js";
-import { notifyAutomatic } from "./dist/src/ui.js";
-import { loadConfig } from "./dist/src/config.js";
-import { hasConfiguredRouterTarget } from "./dist/src/router/task-router.js";
+import { normalizeDecisionQuestions } from "../dist/src/decision/batch.js";
+import { buildDeterministicPruningDecisions } from "../dist/src/compaction/pruner.js";
+import { chooseUIAction } from "../dist/src/gui/action-router.js";
+import { notifyAutomatic } from "../dist/src/ui.js";
+import { loadConfig } from "../dist/src/config.js";
+import { hasConfiguredRouterTarget } from "../dist/src/router/task-router.js";
 
 function group(id, overrides = {}) {
   return {

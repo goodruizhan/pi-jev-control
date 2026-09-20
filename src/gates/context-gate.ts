@@ -5,6 +5,8 @@ import { Type } from "typebox";
 import { noul } from "@typesafe-ai/sdk";
 import type { Questions } from "@typesafe-ai/sdk";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { recordContextInspected, recordContextRejected } from "../stats/savings.js";
 import { tr } from "../i18n.js";
@@ -231,9 +233,23 @@ function resolveProjectRoot(projectRoot: string, requestedRoot: string): string 
   return resolved;
 }
 
+/**
+ * Resolve the ripgrep binary. The Pi extension host's PATH usually does NOT
+ * include Pi's own bundled tools directory (~/.pi/agent/bin), so a bare
+ * spawn("rg") fails with ENOENT inside the extension even though Pi ships rg.
+ * Probe order: PI_JEV_RG_PATH override → Pi bundled binary → "rg" on PATH.
+ */
+export function resolveRgBinary(): string {
+  const override = process.env.PI_JEV_RG_PATH?.trim();
+  if (override && fs.existsSync(override)) return override;
+  const bundled = path.join(os.homedir(), ".pi", "agent", "bin", process.platform === "win32" ? "rg.exe" : "rg");
+  if (fs.existsSync(bundled)) return bundled;
+  return "rg";
+}
+
 function runRipgrep(args: string[], cwd: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("rg", args, {
+    const child = spawn(resolveRgBinary(), args, {
       cwd,
       windowsHide: true,
       signal,

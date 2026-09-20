@@ -3,13 +3,19 @@
   "version": "0.5.0",
   "description": "Silent Jev decision copilot for Pi Coding Agent — bounded batch judgment, local-first context pruning, GUI routing, and measurable savings",
   "private": true,
-  "keywords": ["pi-package", "jev", "typesafe", "router", "tool-gate"],
+  "keywords": [
+    "pi-package",
+    "jev",
+    "typesafe",
+    "router",
+    "tool-gate"
+  ],
   "type": "module",
   "main": "./extensions/index.ts",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test control.test.mjs test/context.test.mjs test/pruning.test.mjs i18n.test.mjs policy.test.mjs runtime.test.mjs v05.test.mjs",
+    "test": "npm run build && node --test \"test/*.test.mjs\"",
     "test:jev": "npm run build && node test/jev-smoke.mjs"
   },
   "dependencies": {
@@ -26,6 +32,8 @@
     "node": ">=20"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions"
+    ]
   }
 }

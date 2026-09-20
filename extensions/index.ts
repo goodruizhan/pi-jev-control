@@ -44,6 +44,18 @@ export default function (pi: ExtensionAPI) {
 
   if (config.memoryGate.enabled) ensureMemoryStore();
 
+  // Warn once when the model router still has placeholder targets — routing
+  // silently no-ops in that state, which is confusing without a hint.
+  if (config.router.enabled && config.router.mode === "set-model") {
+    const specs = Object.values(config.router.models);
+    if (specs.some((spec) => spec.provider === "REPLACE_ME" || spec.model === "REPLACE_ME")) {
+      console.log(tr(
+        `[pi-jev-control] router.models contains REPLACE_ME placeholders — set real provider/model in ${getConfigPath()} to enable model routing`,
+        `[pi-jev-control] router.models 仍是 REPLACE_ME 占位符——请在 ${getConfigPath()} 中配置真实的 provider/model 以启用模型路由`,
+      ));
+    }
+  }
+
   // ── Setup event handlers ────────────────────────────────────────
 
   // Task Router (input event)

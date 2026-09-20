@@ -1,17 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getActionKey } from "./dist/src/action-context.js";
-import { isBenignShellOutcome, isFailureEvent } from "./dist/src/judgment/failure-classifier.js";
-import { setupToolGate } from "./dist/src/gates/tool-gate.js";
-import { loadConfig } from "./dist/src/config.js";
-import { resetClient } from "./dist/src/jev/client.js";
+import { getActionKey } from "../dist/src/action-context.js";
+import { isBenignShellOutcome, isFailureEvent } from "../dist/src/judgment/failure-classifier.js";
+import { setupToolGate } from "../dist/src/gates/tool-gate.js";
+import { loadConfig } from "../dist/src/config.js";
+import { resetClient } from "../dist/src/jev/client.js";
 import {
   getFailureCountByActionKey,
   getFailureCountByFamily,
   recordFailure,
   resetState,
-} from "./dist/src/state/runtime-state.js";
+} from "../dist/src/state/runtime-state.js";
 
 test("write approvals use tool plus path rather than changing content", () => {
   const first = getActionKey("write", { path: "notes/failures.md", content: "first" });

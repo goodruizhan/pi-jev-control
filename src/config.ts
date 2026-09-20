@@ -78,7 +78,7 @@ const DEFAULT_CONFIG: JevControlConfig = {
     silent: true,
     maxCallsPerTurn: 1,
     maxQuestionsPerCall: 8,
-    timeoutMs: 900,
+    timeoutMs: 3000,
     confidenceThreshold: 0.72,
     cacheTurns: 5,
   },
