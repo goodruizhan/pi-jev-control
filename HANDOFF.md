@@ -1,0 +1,121 @@
+# 交接文档 — pi-jev-control
+
+> 面向接手开发的代理/开发者。README 讲「怎么用」，这份讲「内部怎么回事、哪里要小心」。
+
+## 1. 项目定位（不要偏离）
+
+**pi 的决策层**：让 pi 的主 LLM（Claude/GPT 等推理模型）借助**快速判断模型**做决策，提升速度、准确度、节省 token。
+
+- Jev 是 TypeSafe 的 System One 判断模型：输入 `state + questions`，输出**类型化答案 + 校准概率**，不生成文本。
+- **通用化的正确方向**：接入"其他类 Jev 的快速判断模型"（决策模型/分类器/reranker/guard 模型）。
+- **绝对不要**把通用大 LLM 当判断后端——那违背了"快"和"省"的设计初衷。`openai-compatible` 后端只面向 1～4B 级小快模型。
+
+## 2. 当前状态
+
+| 项 | 值 |
+|---|---|
+| 版本 | 0.6.0 |
+| 最新提交 | `3ce3251`（已推送 origin/main，工作区干净） |
+| 测试 | 35/35 通过（`npm test`） |
+| 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
+| 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
+
+**关键：改完插件代码后必须重启 pi 才生效**（插件在 pi 启动时加载）。
+
+## 3. 架构
+
+```
+src/judge/          ← 中立判断核心（v0.6 新增，替换旧 src/jev/）
+  ir.ts             中立 IR：choice/noul/score + 构建器；答案字段名沿用 SDK 习惯
+  backend.ts        JudgmentBackend 接口 + JudgeOutcome + ConfidenceKind
+  typesafe-backend.ts  Jev 及 Jev 兼容克隆 ← 全项目唯一 import @typesafe-ai/sdk 的文件
+  openai-backend.ts     Ollama/小模型：JSON 输出 + 模糊选项匹配 + 概率钳制
+  registry.ts       后端解析：judgment.modules → judgment.backend → fallback
+  facade.ts         judge() 统一入口 + 统计 + 一次性 fallback 链
+  questions.ts      各模块的问题文本（prompt）
+  normalize.ts      选择串 → 类型枚举（便宜/中等/强等），无 SDK 依赖
+
+其余模块（12 个都通过 facade 调用判断）：
+  router/           task-router（分级）、model-router、agent-router
+  gates/            tool-gate、context-gate（jev_search_code）、skill-gate
+  judgment/         failure-classifier、retry-judge
+  memory/           memory-gate、retrieval
+  compaction/       pruner、epoch、context-hook
+  review/           review-gate
+  gui/              action-router
+  decision/         batch（jev_decide_batch）
+  stats/ state/ i18n.ts ui.ts config.ts types.ts
+```
+
+### 后端契约（实现新后端必读）
+
+```ts
+interface JudgmentBackend {
+  readonly name: string;
+  readonly confidenceKind: "calibrated" | "self-reported" | "similarity" | "binary";
+  isAvailable(): boolean;
+  unavailableReason(): string | null;
+  judge(request: JudgeRequestInput, options: JudgeCallOptions): Promise<JudgeOutcome>;
+}
+```
+
+**硬规则：`judge()` 永不抛异常**，所有失败都返回 `{ ok: false, errorType }`。
+上层模块依赖这个契约做确定性降级。新后端必须遵守。
+
+### 置信度语义
+
+- `calibrated`：Jev 原生概率。0.8 就是 0.8。
+- `self-reported`：小模型自报的置信度，**未校准**。阈值应对这类后端更保守。
+- 这个字段是给上层区分对待用的，别糊弄着都填 `calibrated`。
+
+## 4. 关键设计决策
+
+1. **IR 字段名刻意对齐 SDK**（`noul`/`choice`/`confidence`/`probabilities`/`score`），这样换后端时上层几乎不用改。
+2. **`choiceOf(answer)` 收窄器**：后端返回形状不对时降级成 `{choice:"unknown", confidence:0}`，而不是崩。各模块统一用这个。
+3. **向后兼容**：旧版顶层 `jev.model` / `jev.timeoutMs` 仍然有效，`config.ts` 的 `normalizeJudgmentConfig()` 会把它补进 `judgment.backends.typesafe`。老用户零迁移。
+4. **advisory 是默认门控模式**：`toolGate.mode: "advisory"` 时**从不弹确认框、从不拦截**，只发通知（且 `errors-only` 下通知也被抑制）。只有改成 `"enforce"` 才有 `ctx.ui.confirm()`。用户明确要求不打断工作流。
+5. **失败注记**：工具失败后 failure-classifier 会把 `[pi-jev-control 插件评估——并非工具输出]` 追加到工具结果里（原始结果不变、不阻塞）。由 `retryJudge.enabled` 控制。
+
+## 5. 环境坑（踩过的，别再踩）
+
+1. **pi 主进程的 PATH 不含 `~/.pi/agent/bin`**。扩展里直接 `spawn("rg")` 会 ENOENT，但 `npm test` 里发现不了（bash 工具注入了该目录）。所以 `context-gate.ts` 的 `resolveRgBinary()` 必须显式探测 `PI_JEV_RG_PATH` → `~/.pi/agent/bin/rg[.exe]` → PATH。
+2. **TypeSafe SDK 的端点**是 `baseURL + "/v1/systemone"`。配置里的 `baseUrl` **不要带 `/v1`**（否则变 `/v1/v1/systemone`）。Jev 兼容克隆接入只需 `type: "typesafe-api"` + `baseUrl` + `apiKeyEnv` + `model`。
+3. **测试跑的是编译产物**：所有测试 `import "../dist/src/..."`，所以必须先 build。`npm test` 里已经 `npm run build &&` 前缀了。
+4. **`node --test test/` 在 Windows 上报 MODULE_NOT_FOUND**（把目录当模块解析）。必须用 glob：`node --test "test/*.test.mjs"`。
+5. **decisionCopilot 每回合最多 1 次调用**（`maxCallsPerTurn: 1`），第二次会返回 `turn_budget`。这是**设计如此**（鼓励批量），不是 bug。
+6. **`decisionCopilot.timeoutMs` 不能太紧**：批量最多 8 问，冷连接下 900ms 不够，默认已调到 3000ms。
+7. **编辑工具是原子操作**：一个 `oldText` 不匹配则整批全部不生效，容易误以为改成功了。改完务必看返回值。
+
+## 6. 已知待办（v0.6 明确留下，不是丢了）
+
+| 项 | 说明 |
+|---|---|
+| `failureClassifier.appendToResult` 开关 | **最建议先做**。保留失败记忆和重试判断，但不再往工具结果追加那段评估文字。现在要完全关掉只能 `retryJudge.enabled: false`，代价太大 |
+| P4 EmbeddingBackend | 向量相似度后端。接口已留好，实现一个新 `JudgmentBackend` 即可，上层不用改 |
+| P5 后端对比评测（eval hook） | 换判断模型时用数据对比质量，现在有 `stats.backendUsage` 记账基础 |
+| RulesBackend 收编 | 各模块的 fallback 启发式散落在各处，没有统一成一个后端 |
+| Reranker / Guard 后端 | 仅留接口未实现 |
+
+## 7. 开发流程
+
+```bash
+npm run typecheck     # tsc --noEmit
+npm test              # build + 35 个单测（不联网）
+npm run test:jev      # 真实 Jev 冒烟，需要 TYPESAFE_API_KEY
+```
+
+验证清单（改判断层后必跑）：
+
+1. `npx tsc --noEmit` 通过
+2. `npm test` 全绿
+3. `node -e "import('./dist/extensions/index.js').then(m=>console.log(typeof m.default))"` → `function`（模块加载不报错）
+4. `npm run test:jev` → 后端应答、判断合理（危险命令应判 `confirm` 而非 `allow`）
+5. **重启 pi** 验证实际效果：`/jev status`（后端列表）、`/jev probe`（谁应答）、`/jev stats`（后端级用量）
+
+提交前：`git status --short` 必须为空，`git push` 后确认本地 HEAD == 远端 HEAD。
+
+## 8. 参考资料
+
+- 类 Jev 模型完整说明：`D:\Project\AI插件\参考文档\jev是什么.md`
+- TypeSafe 技能文档：`C:\Users\LHC\.agents\skills\typesafe-ai\SKILL.md`
+- GitHub：`https://github.com/goodruizhan/pi-jev-control`
