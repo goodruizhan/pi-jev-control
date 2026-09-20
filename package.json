@@ -1,14 +1,17 @@
 {
   "name": "pi-jev-control",
-  "version": "0.5.0",
-  "description": "Silent Jev decision copilot for Pi Coding Agent — bounded batch judgment, local-first context pruning, GUI routing, and measurable savings",
+  "version": "0.6.0",
+  "description": "Pluggable judgment control layer for Pi Coding Agent — Jev-compatible decision models, per-module backends, tool gating, failure classification, context pruning, and measurable savings",
   "private": true,
   "keywords": [
     "pi-package",
     "jev",
     "typesafe",
+    "system-one",
+    "decision-model",
     "router",
-    "tool-gate"
+    "tool-gate",
+    "ollama"
   ],
   "type": "module",
   "main": "./extensions/index.ts",

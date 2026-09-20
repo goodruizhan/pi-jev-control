@@ -4,6 +4,16 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v0.6 可插拔判断后端
+
+- **判断后端抽象** — 所有决策都经过中立 IR（`choice`/`noul`/`score`），Jev 从「核心」变成「默认后端」
+- **Jev 兼容克隆** — 任何实现 System One 线协议（`POST /v1/systemone`）的端点，纯配置即可接入（`type: "typesafe-api"` + `baseUrl`/`apiKeyEnv`/`model`）
+- **本地小模型** — `openai-compatible` 后端面向 Ollama/vLLM/LM Studio 的小快模型，支持离线与私有判断（自报置信度 + 模糊匹配归一化）
+- **按模块路由** — `judgment.modules` 可为 router、toolGate 等模块分别指定后端；`judgment.fallback` 配置备用后端
+- **诚实的置信度** — 每个后端声明自己的置信度性质（`calibrated` 校准概率 vs `self-reported` 自报置信度），避免阈值被误读
+- **按后端统计** — `/jev stats` 分后端展示用量
+- **现场修复** — ripgrep 不再依赖 PATH、决策批量超时更合理、技能发现覆盖 `pi-hermes-memory` 目录、启动时提醒未配置的 `REPLACE_ME` 路由模型
+
 ## v0.5 静默决策副驾驶
 
 - **批量判断** — `jev_decide_batch` 在一次 Jev 请求中处理最多 8 个边界明确的选择题
@@ -159,7 +169,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "silent": true,
     "maxCallsPerTurn": 1,
     "maxQuestionsPerCall": 8,
-    "timeoutMs": 900,
+    "timeoutMs": 3000,
     "confidenceThreshold": 0.72,
     "cacheTurns": 5
   }
@@ -194,7 +204,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 
 ## 自定义工具
 
-- `jev_search_code` — 使用 rg 与 Jev 排序查找与任务相关的代码
+- `jev_search_code` — 使用 rg 与判断排序查找与任务相关的代码（ripgrep 解析顺序：`PI_JEV_RG_PATH` → Pi 自带 `~/.pi/agent/bin/rg` → PATH）
 - `jev_select_skills` — 为当前任务选择相关的 Pi 技能
 - `jev_route_agent` — 确定最合适的代理类型（侦察/编码/审查）
 - `jev_memory_search` — 使用 Jev 排序搜索本地记忆存储

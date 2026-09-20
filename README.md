@@ -4,6 +4,16 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v0.6 Pluggable Judgment Backends
+
+- **Judgment backend abstraction** — every decision flows through a neutral IR (`choice`/`noul`/`score`); Jev is now the default *backend*, not the core
+- **Jev-compatible clones** — any endpoint speaking the System One wire format (`POST /v1/systemone`) plugs in with config only (`type: "typesafe-api"` + `baseUrl`/`apiKeyEnv`/`model`)
+- **Small local models** — the `openai-compatible` backend targets Ollama/vLLM/LM Studio for offline or private judgment (self-reported confidence, fuzzy answer normalization)
+- **Per-module routing** — `judgment.modules` assigns a backend per module (router, toolGate, ...); `judgment.fallback` adds a standby backend
+- **Honest confidence** — each backend declares its confidence kind (`calibrated` vs `self-reported`) so thresholds are interpreted correctly
+- **Per-backend stats** — `/jev stats` breaks usage down by backend
+- **Field fixes** — ripgrep resolution no longer depends on PATH, decision batches get a realistic timeout, skill discovery covers `pi-hermes-memory` skills, startup warns about unconfigured `REPLACE_ME` router models
+
 ## v0.5 Silent Decision Copilot
 
 - **Batch decisions** — `jev_decide_batch` resolves up to 8 bounded choice questions in one Jev request
@@ -159,7 +169,7 @@ Create `~/.pi/agent/jev-control.json`:
     "silent": true,
     "maxCallsPerTurn": 1,
     "maxQuestionsPerCall": 8,
-    "timeoutMs": 900,
+    "timeoutMs": 3000,
     "confidenceThreshold": 0.72,
     "cacheTurns": 5
   }
@@ -167,6 +177,54 @@ Create `~/.pi/agent/jev-control.json`:
 ```
 
 Project-level config override: `<project>/.pi/jev-control.json` (overrides global).
+
+### Judgment backends
+
+All modules ask a **judgment backend** for decisions. The default backend is `typesafe` (Jev via the TypeSafe API). You can add backends, swap the default, assign backends per module, and configure a fallback — without touching code.
+
+```json
+{
+  "judgment": {
+    "backend": "typesafe",
+    "fallback": "local-small",
+    "modules": {
+      "contextGate": "local-small"
+    },
+    "backends": {
+      "typesafe": {
+        "type": "typesafe-api",
+        "apiKeyEnv": "TYPESAFE_API_KEY",
+        "model": "jev-latest",
+        "timeoutMs": 4000
+      },
+      "openjev": {
+        "type": "typesafe-api",
+        "baseUrl": "https://api.openjev.example",
+        "apiKeyEnv": "OPENJEV_API_KEY",
+        "model": "openjev-1"
+      },
+      "local-small": {
+        "type": "openai-compatible",
+        "baseUrl": "http://localhost:11434/v1",
+        "model": "qwen3:1.7b",
+        "timeoutMs": 8000
+      }
+    }
+  }
+}
+```
+
+Backend types:
+
+- **`typesafe-api`** — Jev or any Jev-compatible clone exposing the System One wire format (`POST {baseUrl}/v1/systemone`). `baseUrl` is the API root without a `/v1` suffix (e.g. `https://api.typesafe.ai`). Returns calibrated probabilities (`confidenceKind: "calibrated"`).
+- **`openai-compatible`** — any OpenAI chat-completions endpoint, intended for **small, fast judgment models** (1–4B class, e.g. Ollama locally). Answers are parsed from strict JSON with fuzzy choice matching; confidence is `self-reported`, so treat thresholds more conservatively. Pointing this at a large general LLM defeats the purpose of a fast decision layer.
+
+Notes:
+
+- API keys come from environment variables named by `apiKeyEnv` — never put keys in the config file.
+- The legacy top-level `jev.model` / `jev.timeoutMs` keys keep working; they fill gaps in `judgment.backends.typesafe`.
+- `judgment.modules` keys are module names: `router`, `toolGate`, `failureJudge`, `contextGate`, `skillGate`, `memoryGate`, `memorySearch`, `compaction`, `reviewGate`, `guiRouter`, `decision`.
+- When the primary backend is unavailable or fails, `judgment.fallback` gets one attempt; beyond that each module falls back to its local heuristics as before.
 
 ### Language
 
@@ -194,7 +252,7 @@ In `enforce` mode, `confirmOnLowConfidence` controls low-confidence prompts. Set
 
 ## Custom Tools
 
-- `jev_search_code` — Find code relevant to a task using rg + Jev ranking
+- `jev_search_code` — Find code relevant to a task using rg + judgment ranking (ripgrep is resolved via `PI_JEV_RG_PATH`, then Pi's bundled `~/.pi/agent/bin/rg`, then PATH)
 - `jev_select_skills` — Select relevant Pi skills for the current task
 - `jev_route_agent` — Determine best agent type (scout/coder/reviewer)
 - `jev_memory_search` — Search local memory store with Jev ranking
