@@ -174,6 +174,9 @@ export interface JevControlConfig {
     maxSameFailureRetries: number;
     timeoutMs: number;
     skipBenignExitCodes: boolean;
+    /** Append the assessment block to failed tool results. Set false to keep
+     *  failure memory + retry judgment while leaving tool output untouched. */
+    appendToResult: boolean;
   };
   contextGate: {
     enabled: boolean;

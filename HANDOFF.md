@@ -16,7 +16,7 @@
 |---|---|
 | 版本 | 0.6.0 |
 | 最新提交 | `3ce3251`（已推送 origin/main，工作区干净） |
-| 测试 | 35/35 通过（`npm test`） |
+| 测试 | 36/36 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
@@ -74,7 +74,7 @@ interface JudgmentBackend {
 2. **`choiceOf(answer)` 收窄器**：后端返回形状不对时降级成 `{choice:"unknown", confidence:0}`，而不是崩。各模块统一用这个。
 3. **向后兼容**：旧版顶层 `jev.model` / `jev.timeoutMs` 仍然有效，`config.ts` 的 `normalizeJudgmentConfig()` 会把它补进 `judgment.backends.typesafe`。老用户零迁移。
 4. **advisory 是默认门控模式**：`toolGate.mode: "advisory"` 时**从不弹确认框、从不拦截**，只发通知（且 `errors-only` 下通知也被抑制）。只有改成 `"enforce"` 才有 `ctx.ui.confirm()`。用户明确要求不打断工作流。
-5. **失败注记**：工具失败后 failure-classifier 会把 `[pi-jev-control 插件评估——并非工具输出]` 追加到工具结果里（原始结果不变、不阻塞）。由 `retryJudge.enabled` 控制。
+5. **失败注记**：工具失败后 failure-classifier 会把 `[pi-jev-control 插件评估——并非工具输出]` 追加到工具结果里（原始结果不变、不阻塞）。由 `retryJudge.enabled` 总控；`retryJudge.appendToResult: false` 可只关掉追加文字、保留失败记忆和重试判断。
 
 ## 5. 环境坑（踩过的，别再踩）
 
@@ -90,7 +90,6 @@ interface JudgmentBackend {
 
 | 项 | 说明 |
 |---|---|
-| `failureClassifier.appendToResult` 开关 | **最建议先做**。保留失败记忆和重试判断，但不再往工具结果追加那段评估文字。现在要完全关掉只能 `retryJudge.enabled: false`，代价太大 |
 | P4 EmbeddingBackend | 向量相似度后端。接口已留好，实现一个新 `JudgmentBackend` 即可，上层不用改 |
 | P5 后端对比评测（eval hook） | 换判断模型时用数据对比质量，现在有 `stats.backendUsage` 记账基础 |
 | RulesBackend 收编 | 各模块的 fallback 启发式散落在各处，没有统一成一个后端 |
@@ -100,7 +99,7 @@ interface JudgmentBackend {
 
 ```bash
 npm run typecheck     # tsc --noEmit
-npm test              # build + 35 个单测（不联网）
+npm test              # build + 36 个单测（不联网）
 npm run test:jev      # 真实 Jev 冒烟，需要 TYPESAFE_API_KEY
 ```
 

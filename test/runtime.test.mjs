@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getActionKey } from "../dist/src/action-context.js";
-import { isBenignShellOutcome, isFailureEvent } from "../dist/src/judgment/failure-classifier.js";
+import { getActionKey, getCommandCategory } from "../dist/src/action-context.js";
+import { isBenignShellOutcome, isFailureEvent, setupFailureClassifier } from "../dist/src/judgment/failure-classifier.js";
 import { setupToolGate } from "../dist/src/gates/tool-gate.js";
 import { loadConfig } from "../dist/src/config.js";
 import { resetJudgeBackends as resetClient } from "../dist/src/judge/registry.js";
@@ -42,6 +42,50 @@ test("failure counts accumulate by action and command family", () => {
   recordFailure({ ...base, signature: "second", errorExcerpt: "failed differently" });
   assert.equal(getFailureCountByActionKey(base.actionKey), 2);
   assert.equal(getFailureCountByFamily(base.toolName, base.commandCategory), 2);
+  resetState();
+});
+
+test("appendToResult=false keeps failure records but leaves tool output untouched", async () => {
+  resetState();
+  const handlers = new Map();
+  setupFailureClassifier({ on: (event, handler) => handlers.set(event, handler) });
+  const handler = handlers.get("tool_result");
+
+  const input = { path: "missing-file-append-toggle.ts" };
+  recordFailure({
+    signature: "seed",
+    actionKey: getActionKey("read", input),
+    commandCategory: getCommandCategory("read", input),
+    toolName: "read",
+    inputSummary: JSON.stringify(input),
+    errorExcerpt: "File not found",
+    failureType: "code_error",
+    recommendedAction: "repair_then_retry",
+  });
+
+  const config = loadConfig();
+  config.enabled = true;
+  config.retryJudge.enabled = true;
+  const event = {
+    toolName: "read",
+    input,
+    isError: true,
+    content: [{ type: "text", text: "File not found" }],
+    details: {},
+  };
+
+  config.retryJudge.appendToResult = false;
+  const silent = await handler(event, {});
+  assert.equal(silent, undefined);
+  assert.equal(getFailureCountByActionKey(getActionKey("read", input)), 2);
+
+  config.retryJudge.appendToResult = true;
+  const annotated = await handler(event, {});
+  assert.equal(getFailureCountByActionKey(getActionKey("read", input)), 3);
+  const texts = annotated.content.map((block) => block.text ?? "").join("\n");
+  assert.match(texts, /pi-jev-control/);
+  assert.match(texts, /File not found/);
+
   resetState();
 });
 

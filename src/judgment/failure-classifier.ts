@@ -105,6 +105,8 @@ function appendAssessment(event: any, assessment: AssessmentInput) {
   });
   storeFailureMemory(assessment.toolName, assessment.inputSummary, assessment.errorExcerpt, assessment.failureType, assessment.recommendedAction);
 
+  if (loadConfig().retryJudge.appendToResult === false) return undefined;
+
   const judgmentText = tr(
     [
       `[pi-jev-control plugin assessment — not tool output]`,
@@ -127,6 +129,7 @@ function appendAssessment(event: any, assessment: AssessmentInput) {
 }
 
 function appendUnavailableAssessment(event: any, errorType: string, error: string) {
+  if (loadConfig().retryJudge.appendToResult === false) return undefined;
   return withAppendedText(event, tr(
     `[pi-jev-control plugin assessment — not tool output]\nstatus: skipped (${errorType})\ndetail: ${error.slice(0, 300)}\nraw tool result preserved`,
     `[pi-jev-control 插件评估——并非工具输出]\n状态：已跳过（${errorType}）\n详情：${error.slice(0, 300)}\n原始工具结果保持不变`,

@@ -53,6 +53,7 @@ const DEFAULT_CONFIG: JevControlConfig = {
     maxSameFailureRetries: 2,
     timeoutMs: 1200,
     skipBenignExitCodes: true,
+    appendToResult: true,
   },
   contextGate: {
     enabled: true,

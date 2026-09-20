@@ -32,7 +32,7 @@
 - 向 Jev 提供退出码、stderr、命令类别、中止状态和失败计数
 - 相同操作/失败类别重复出现时，本地直接建议 `do_not_retry`
 - 同类失败累计两次后才熔断；历史失败默认提醒而非硬拦截
-- 明确标注失败评估来自插件，并非工具输出
+- 明确标注失败评估来自插件，并非工具输出；设 `retryJudge.appendToResult: false` 可保留失败记忆与重试判断、但不再改动工具输出
 - 失败判断默认超时缩短至 1200 毫秒
 - 上下文、技能、记忆和压缩门控改为默认开启
 - 工具输出不足以达到节省阈值时，压缩功能在本地跳过 Jev
@@ -130,7 +130,8 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "enabled": true,
     "maxSameFailureRetries": 2,
     "timeoutMs": 1200,
-    "skipBenignExitCodes": true
+    "skipBenignExitCodes": true,
+    "appendToResult": true
   },
   "contextGate": {
     "enabled": true,
