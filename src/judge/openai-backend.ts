@@ -294,17 +294,17 @@ function clamp01(value: number | null): number | null {
 
 // ── Transport helpers ───────────────────────────────────────────────────
 
-function composeSignal(caller: AbortSignal | undefined, timeoutMs: number): AbortSignal | undefined {
+export function composeSignal(caller: AbortSignal | undefined, timeoutMs: number): AbortSignal | undefined {
   const timeout = AbortSignal.timeout(timeoutMs);
   if (!caller) return timeout;
   return AbortSignal.any([caller, timeout]);
 }
 
-function isAbortError(err: unknown): boolean {
+export function isAbortError(err: unknown): boolean {
   return err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
 }
 
-function classifyHttpStatus(status: number): JudgeErrorType {
+export function classifyHttpStatus(status: number): JudgeErrorType {
   if (status === 401 || status === 403) return "auth";
   if (status === 429) return "quota";
   if (status === 404) return "unavailable";

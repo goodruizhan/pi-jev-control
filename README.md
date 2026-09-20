@@ -4,6 +4,11 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v0.7 Embedding Backend & Backend Evaluation
+
+- **Embedding backend** — zero-shot judgment via any OpenAI-compatible embeddings endpoint (cosine similarity + softmax; candidate embeddings cached in-memory)
+- **Backend evaluation** — record live judgments to JSONL (`judgment.eval.recordPath`) and replay them against other backends with `npm run eval` before switching models
+
 ## v0.6 Pluggable Judgment Backends
 
 - **Judgment backend abstraction** — every decision flows through a neutral IR (`choice`/`noul`/`score`); Jev is now the default *backend*, not the core
@@ -209,7 +214,15 @@ All modules ask a **judgment backend** for decisions. The default backend is `ty
         "baseUrl": "http://localhost:11434/v1",
         "model": "qwen3:1.7b",
         "timeoutMs": 8000
+      },
+      "local-embed": {
+        "type": "embedding",
+        "baseUrl": "http://localhost:11434/v1",
+        "model": "nomic-embed-text"
       }
+    },
+    "eval": {
+      "recordPath": "~/.pi/agent/jev-control-eval.jsonl"
     }
   }
 }
@@ -219,6 +232,16 @@ Backend types:
 
 - **`typesafe-api`** — Jev or any Jev-compatible clone exposing the System One wire format (`POST {baseUrl}/v1/systemone`). `baseUrl` is the API root without a `/v1` suffix (e.g. `https://api.typesafe.ai`). Returns calibrated probabilities (`confidenceKind: "calibrated"`).
 - **`openai-compatible`** — any OpenAI chat-completions endpoint, intended for **small, fast judgment models** (1–4B class, e.g. Ollama locally). Answers are parsed from strict JSON with fuzzy choice matching; confidence is `self-reported`, so treat thresholds more conservatively. Pointing this at a large general LLM defeats the purpose of a fast decision layer.
+- **`embedding`** — any OpenAI-compatible embeddings endpoint (`POST {baseUrl}/embeddings`). Zero-shot judgment: the question+state becomes a query text, each option becomes a candidate text, cosine similarity + softmax picks the answer. Confidence is `similarity` — it only measures how much the winner beats the rest, so keep thresholds conservative. Static candidate texts (option labels) are cached in memory, so each judgment costs one batched HTTP call.
+
+### Comparing backends (`npm run eval`)
+
+Before swapping `judgment.backend` to a new model, measure it against the current one:
+
+1. **Record real traffic** — set `judgment.eval.recordPath` and use Pi normally. Every successful judgment is appended as one JSONL line (state, questions, answers, latency).
+2. **Replay** — `npm run eval` replays a dataset against every other configured backend and reports agreement rate, average distance, average confidence, and latency per backend. `--dataset <file>` points at your recording; the default is the bundled seed set `test/eval/cases.jsonl` with expected labels. `--backends a,b` and `--reference name` override the lineup.
+
+The recording hook is best-effort and never blocks or breaks live judgments.
 
 Notes:
 

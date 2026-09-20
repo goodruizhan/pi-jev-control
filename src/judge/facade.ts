@@ -10,6 +10,8 @@ import type { JudgeOutcome, JudgeRequestInput } from "./backend.js";
 import type { JudgeQuestions } from "./ir.js";
 import { resolveBackend, resolveFallback, allConfiguredBackends } from "./registry.js";
 import { recordRequest, recordFailure, recordBackendUsage } from "../stats/stats.js";
+import { loadConfig } from "../config.js";
+import { appendEvalRecord } from "./eval.js";
 
 export interface JudgeCallContext {
   /** Module name for stats and per-module backend overrides. */
@@ -67,6 +69,20 @@ async function runAndRecord(
   recordBackendUsage(backend.name, outcome.ok);
   if (outcome.ok) {
     recordRequest(options.module, outcome.usage, outcome.latencyMs);
+    const recordPath = loadConfig().judgment.eval?.recordPath;
+    if (recordPath) {
+      appendEvalRecord(recordPath, {
+        ts: Date.now(),
+        module: options.module,
+        backend: backend.name,
+        model: outcome.model,
+        confidenceKind: outcome.confidenceKind,
+        state: request.state ?? {},
+        questions: request.questions,
+        answers: outcome.answers ?? {},
+        latencyMs: outcome.latencyMs,
+      });
+    }
   } else if (outcome.errorType !== "aborted") {
     recordFailure(options.module);
   }

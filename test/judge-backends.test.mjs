@@ -170,3 +170,123 @@ test("openai-compatible backend never throws on connection failure", async () =>
     globalThis.fetch = originalFetch;
   }
 });
+
+// ── Embedding backend ───────────────────────────────────────────────────
+
+import { EmbeddingBackend } from "../dist/src/judge/embedding-backend.js";
+import { getBackendByName } from "../dist/src/judge/registry.js";
+
+/** Mock /embeddings: fn maps each input text to a vector; calls are recorded. */
+function mockEmbeddingFetch(vectorFor, calls = []) {
+  return async (url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: body.input.map((text, index) => ({ embedding: vectorFor(text), index })),
+        usage: { prompt_tokens: 42 },
+      }),
+    };
+  };
+}
+
+test("embedding backend requires a configured model", () => {
+  const backend = new EmbeddingBackend({ name: "no-model" });
+  assert.equal(backend.isAvailable(), false);
+  assert.match(backend.unavailableReason() ?? "", /no model configured/);
+});
+
+test("embedding backend picks the most similar choice candidate", async () => {
+  const originalFetch = globalThis.fetch;
+  // query/candidate containing the marker are close; everything else is orthogonal
+  globalThis.fetch = mockEmbeddingFetch((text) => (text.includes("alpha-ish") ? [1, 0] : [0, 1]));
+  try {
+    const backend = new EmbeddingBackend({ name: "emb", model: "nomic-embed-text" });
+    const outcome = await backend.judge(
+      {
+        state: { hint: "this state is alpha-ish" },
+        questions: { pick: choice("Pick one", { alpha: "alpha-ish option", beta: "something else" }) },
+      },
+      {},
+    );
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.confidenceKind, "similarity");
+    assert.equal(outcome.answers.pick.type, "choice");
+    assert.equal(outcome.answers.pick.choice, "alpha");
+    const probs = Object.values(outcome.answers.pick.probabilities);
+    assert.ok(Math.abs(probs.reduce((a, b) => a + b, 0) - 1) < 1e-9, "probabilities sum to 1");
+    assert.equal(outcome.usage.input_tokens, 42);
+    assert.equal(outcome.usage.output_tokens, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("embedding backend answers noul with a softmax probability", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockEmbeddingFetch((text) => (text === "no" ? [0, 1] : [1, 0]));
+  try {
+    const backend = new EmbeddingBackend({ name: "emb", model: "nomic-embed-text" });
+    const outcome = await backend.judge(
+      { state: { x: 1 }, questions: { risky: noul("Is this risky?") } },
+      {},
+    );
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.answers.risky.type, "noul");
+    // query ≈ "yes" anchor, far from "no" → high probability with default temperature
+    assert.ok(outcome.answers.risky.noul > 0.9, `expected high noul, got ${outcome.answers.risky.noul}`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("embedding backend caches candidate embeddings across calls", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = mockEmbeddingFetch((text) => (text.includes("x") ? [1, 0] : [0, 1]), calls);
+  try {
+    const backend = new EmbeddingBackend({ name: "emb", model: "nomic-embed-text" });
+    const questions = { pick: choice("Pick", { a: "ax", b: "b" }) };
+    await backend.judge({ state: { run: 1, x: true }, questions }, {});
+    await backend.judge({ state: { run: 2, x: true }, questions }, {});
+    assert.equal(calls.length, 2);
+    // First call embeds query + 2 candidates; second call only the fresh query
+    assert.equal(calls[0].input.length, 3);
+    assert.equal(calls[1].input.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("embedding backend maps HTTP errors and never throws", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
+    let backend = new EmbeddingBackend({ name: "emb", model: "m" });
+    let outcome = await backend.judge({ state: {}, questions: { q: noul("?") } }, {});
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.errorType, "auth");
+
+    globalThis.fetch = async () => { throw new Error("ECONNREFUSED"); };
+    backend = new EmbeddingBackend({ name: "emb", model: "m" });
+    outcome = await backend.judge({ state: {}, questions: { q: noul("?") } }, {});
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.errorType, "unavailable");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("registry instantiates embedding backends from config", () => {
+  const config = loadConfig();
+  config.judgment.backends["emb-test"] = { type: "embedding", model: "nomic-embed-text" };
+  resetJudgeBackends();
+  const backend = getBackendByName("emb-test");
+  assert.ok(backend);
+  assert.equal(backend.confidenceKind, "similarity");
+  assert.equal(backend.isAvailable(), true);
+  delete config.judgment.backends["emb-test"];
+  resetJudgeBackends();
+});

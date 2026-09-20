@@ -4,6 +4,11 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v0.7 Embedding 后端与后端评测
+
+- **Embedding 后端** — 任何 OpenAI 兼容 embeddings 端点即可做零样本判断（余弦相似度 + softmax；候选文本的向量缓存在内存中）
+- **后端评测** — 用 `judgment.eval.recordPath` 把真实判断记录为 JSONL，切换模型前用 `npm run eval` 重放对比各后端的吻合率/延迟
+
 ## v0.6 可插拔判断后端
 
 - **判断后端抽象** — 所有决策都经过中立 IR（`choice`/`noul`/`score`），Jev 从「核心」变成「默认后端」

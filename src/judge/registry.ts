@@ -8,6 +8,7 @@ import type { JudgmentBackendConfig, JudgmentConfig } from "../types.js";
 import type { JudgmentBackend } from "./backend.js";
 import { TypeSafeBackend } from "./typesafe-backend.js";
 import { OpenAiCompatibleBackend } from "./openai-backend.js";
+import { EmbeddingBackend } from "./embedding-backend.js";
 
 const instances = new Map<string, JudgmentBackend>();
 
@@ -29,6 +30,15 @@ function createBackend(name: string, config: JudgmentBackendConfig): JudgmentBac
         model: config.model,
         timeoutMs: config.timeoutMs,
       });
+    case "embedding":
+      return new EmbeddingBackend({
+        name,
+        apiKeyEnv: config.apiKeyEnv,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        timeoutMs: config.timeoutMs,
+        temperature: config.temperature,
+      });
     default:
       return null;
   }
@@ -48,6 +58,11 @@ function getBackend(name: string): JudgmentBackend | null {
 
 function judgmentConfig(): JudgmentConfig {
   return loadConfig().judgment;
+}
+
+/** Instantiate a configured backend by name — used by the offline eval runner. */
+export function getBackendByName(name: string): JudgmentBackend | null {
+  return getBackend(name);
 }
 
 /**

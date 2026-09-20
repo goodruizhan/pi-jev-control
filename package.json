@@ -1,6 +1,6 @@
 {
   "name": "pi-jev-control",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Pluggable judgment control layer for Pi Coding Agent — Jev-compatible decision models, per-module backends, tool gating, failure classification, context pruning, and measurable savings",
   "private": true,
   "keywords": [
@@ -19,7 +19,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test \"test/*.test.mjs\"",
-    "test:jev": "npm run build && node test/jev-smoke.mjs"
+    "test:jev": "npm run build && node test/jev-smoke.mjs",
+    "eval": "npm run build && node test/eval-backends.mjs"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "0.6.0",

@@ -228,7 +228,7 @@ export interface ModelSpec {
 
 // ── Judgment backend configuration ──────────────────────────────────────
 
-export type JudgmentBackendType = "typesafe-api" | "openai-compatible";
+export type JudgmentBackendType = "typesafe-api" | "openai-compatible" | "embedding";
 
 export interface JudgmentBackendConfig {
   type: JudgmentBackendType;
@@ -238,6 +238,17 @@ export interface JudgmentBackendConfig {
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
+  /** embedding backends only: softmax temperature over cosine similarities. */
+  temperature?: number;
+}
+
+export interface JudgmentEvalConfig {
+  /**
+   * When set, every successful judgment is appended to this JSONL file
+   * (state + questions + answers + latency), so `npm run eval` can replay
+   * real traffic against other backends and compare quality.
+   */
+  recordPath?: string;
 }
 
 export interface JudgmentConfig {
@@ -248,6 +259,8 @@ export interface JudgmentConfig {
   /** Per-module backend overrides, keyed by module name (router, toolGate, ...). */
   modules?: Record<string, string>;
   backends: Record<string, JudgmentBackendConfig>;
+  /** Backend evaluation: record live judgments for offline comparison. */
+  eval?: JudgmentEvalConfig;
 }
 
 // ── Short confirmation phrases (not routed) ─────────────────────────────

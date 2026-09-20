@@ -16,7 +16,7 @@
 |---|---|
 | 版本 | 0.6.0 |
 | 最新提交 | `3ce3251`（已推送 origin/main，工作区干净） |
-| 测试 | 36/36 通过（`npm test`） |
+| 测试 | 49/49 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
@@ -86,20 +86,20 @@ interface JudgmentBackend {
 6. **`decisionCopilot.timeoutMs` 不能太紧**：批量最多 8 问，冷连接下 900ms 不够，默认已调到 3000ms。
 7. **编辑工具是原子操作**：一个 `oldText` 不匹配则整批全部不生效，容易误以为改成功了。改完务必看返回值。
 
-## 6. 已知待办（v0.6 明确留下，不是丢了）
+## 6. 已知待办（v0.7 后仍留，不是丢了）
 
 | 项 | 说明 |
 |---|---|
-| P4 EmbeddingBackend | 向量相似度后端。接口已留好，实现一个新 `JudgmentBackend` 即可，上层不用改 |
-| P5 后端对比评测（eval hook） | 换判断模型时用数据对比质量，现在有 `stats.backendUsage` 记账基础 |
 | RulesBackend 收编 | 各模块的 fallback 启发式散落在各处，没有统一成一个后端 |
 | Reranker / Guard 后端 | 仅留接口未实现 |
+
+已完成：P4 EmbeddingBackend（`embedding-backend.ts`，`type: "embedding"`，余弦相似度+softmax，候选向量内存缓存）；P5 后端评测（facade 记录钩子 `judgment.eval.recordPath` → JSONL，`npm run eval` 用 `test/eval-backends.mjs` 重放对比，`test/eval/cases.jsonl` 为带标注的种子数据集）。
 
 ## 7. 开发流程
 
 ```bash
 npm run typecheck     # tsc --noEmit
-npm test              # build + 36 个单测（不联网）
+npm test              # build + 49 个单测（不联网）
 npm run test:jev      # 真实 Jev 冒烟，需要 TYPESAFE_API_KEY
 ```
 
