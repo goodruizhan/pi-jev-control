@@ -14,13 +14,15 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 0.6.0 |
-| 最新提交 | `3ce3251`（已推送 origin/main，工作区干净） |
+| 版本 | 0.7.0 |
+| 最新提交 | `0475334`（已推送 origin/main，工作区干净） |
 | 测试 | 49/49 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
 **关键：改完插件代码后必须重启 pi 才生效**（插件在 pi 启动时加载）。
+
+**部署位置（易混淆）**：pi 加载的是安装包副本 `~/.pi/agent/git/github.com/goodruizhan/pi-jev-control`（直接加载 TS 源码，不需要 dist），**不是** `D:\Project\...` 开发副本。两者版本可能差好几个大版本。升级：`pi update --extensions`（安装的是无 ref 锁定的 git 包，reconcile 会拉最新 main 并自动 `npm install`），然后重启 pi。
 
 ## 3. 架构
 
@@ -30,8 +32,10 @@ src/judge/          ← 中立判断核心（v0.6 新增，替换旧 src/jev/）
   backend.ts        JudgmentBackend 接口 + JudgeOutcome + ConfidenceKind
   typesafe-backend.ts  Jev 及 Jev 兼容克隆 ← 全项目唯一 import @typesafe-ai/sdk 的文件
   openai-backend.ts     Ollama/小模型：JSON 输出 + 模糊选项匹配 + 概率钳制
+  embedding-backend.ts  向量相似度（v0.7）：余弦相似度+softmax，候选向量内存缓存
+  eval.ts               后端评测（v0.7）：JSONL 记录 + 两后端答案对比（agree/distance）
   registry.ts       后端解析：judgment.modules → judgment.backend → fallback
-  facade.ts         judge() 统一入口 + 统计 + 一次性 fallback 链
+  facade.ts         judge() 统一入口 + 统计 + 一次性 fallback 链 + eval 记录钩子
   questions.ts      各模块的问题文本（prompt）
   normalize.ts      选择串 → 类型枚举（便宜/中等/强等），无 SDK 依赖
 
@@ -101,6 +105,7 @@ interface JudgmentBackend {
 npm run typecheck     # tsc --noEmit
 npm test              # build + 49 个单测（不联网）
 npm run test:jev      # 真实 Jev 冒烟，需要 TYPESAFE_API_KEY
+npm run eval          # 后端对比评测，重放 test/eval/cases.jsonl（联网）
 ```
 
 验证清单（改判断层后必跑）：
