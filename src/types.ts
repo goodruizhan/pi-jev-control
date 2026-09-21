@@ -228,7 +228,7 @@ export interface ModelSpec {
 
 // ── Judgment backend configuration ──────────────────────────────────────
 
-export type JudgmentBackendType = "typesafe-api" | "openai-compatible" | "embedding";
+export type JudgmentBackendType = "typesafe-api" | "openai-compatible" | "embedding" | "rules";
 
 export interface JudgmentBackendConfig {
   type: JudgmentBackendType;
@@ -254,8 +254,8 @@ export interface JudgmentEvalConfig {
 export interface JudgmentConfig {
   /** Name of the default backend. */
   backend: string;
-  /** Optional fallback tried when the default backend is unavailable/fails. */
-  fallback?: string;
+  /** Fallback tried when the default backend fails; null disables the default. */
+  fallback?: string | null;
   /** Per-module backend overrides, keyed by module name (router, toolGate, ...). */
   modules?: Record<string, string>;
   backends: Record<string, JudgmentBackendConfig>;

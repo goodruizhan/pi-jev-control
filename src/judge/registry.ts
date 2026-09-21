@@ -4,11 +4,12 @@
  */
 
 import { loadConfig } from "../config.js";
-import type { JudgmentBackendConfig, JudgmentConfig } from "../types.js";
+import type { JudgmentBackendConfig, JudgmentBackendType, JudgmentConfig } from "../types.js";
 import type { JudgmentBackend } from "./backend.js";
 import { TypeSafeBackend } from "./typesafe-backend.js";
 import { OpenAiCompatibleBackend } from "./openai-backend.js";
 import { EmbeddingBackend } from "./embedding-backend.js";
+import { RulesBackend } from "./rules-backend.js";
 
 const instances = new Map<string, JudgmentBackend>();
 
@@ -39,6 +40,8 @@ function createBackend(name: string, config: JudgmentBackendConfig): JudgmentBac
         timeoutMs: config.timeoutMs,
         temperature: config.temperature,
       });
+    case "rules":
+      return new RulesBackend({ name });
     default:
       return null;
   }
@@ -104,6 +107,11 @@ export function allConfiguredBackends(): JudgmentBackend[] {
     if (backend) result.push(backend);
   }
   return result;
+}
+
+/** Configured type of a backend by name (null when unknown). */
+export function backendTypeOf(name: string): JudgmentBackendType | null {
+  return judgmentConfig().backends?.[name]?.type ?? null;
 }
 
 /** Last-resort guard so resolveBackend never returns undefined. */

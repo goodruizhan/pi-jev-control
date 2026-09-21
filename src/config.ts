@@ -21,12 +21,16 @@ const DEFAULT_CONFIG: JevControlConfig = {
     // Add more entries under backends and point judgment.backend (or
     // judgment.modules.<module>) at them to swap the judgment model.
     backend: "typesafe",
+    // Deterministic rules backend as the last resort — keeps judge()
+    // answers deterministic when every model backend is down.
+    fallback: "rules",
     backends: {
       typesafe: {
         type: "typesafe-api",
         apiKeyEnv: "TYPESAFE_API_KEY",
         // model/timeoutMs fall back to the legacy jev.* values below.
       },
+      rules: { type: "rules" },
     },
   },
   router: {
@@ -149,6 +153,8 @@ function normalizeJudgmentConfig(config: JevControlConfig): JevControlConfig {
   typesafe.model = typesafe.model ?? config.jev.model;
   typesafe.timeoutMs = typesafe.timeoutMs ?? config.jev.timeoutMs;
   judgment.backends["typesafe"] = typesafe;
+  // Keep a rules entry available for the default or a custom fallback.
+  judgment.backends["rules"] = judgment.backends["rules"] ?? { type: "rules" };
   if (!judgment.backend || !judgment.backends[judgment.backend]) {
     judgment.backend = "typesafe";
   }

@@ -233,6 +233,7 @@ Backend types:
 - **`typesafe-api`** — Jev or any Jev-compatible clone exposing the System One wire format (`POST {baseUrl}/v1/systemone`). `baseUrl` is the API root without a `/v1` suffix (e.g. `https://api.typesafe.ai`). Returns calibrated probabilities (`confidenceKind: "calibrated"`).
 - **`openai-compatible`** — any OpenAI chat-completions endpoint, intended for **small, fast judgment models** (1–4B class, e.g. Ollama locally). Answers are parsed from strict JSON with fuzzy choice matching; confidence is `self-reported`, so treat thresholds more conservatively. Pointing this at a large general LLM defeats the purpose of a fast decision layer.
 - **`embedding`** — any OpenAI-compatible embeddings endpoint (`POST {baseUrl}/embeddings`). Zero-shot judgment: the question+state becomes a query text, each option becomes a candidate text, cosine similarity + softmax picks the answer. Confidence is `similarity` — it only measures how much the winner beats the rest, so keep thresholds conservative. Static candidate texts (option labels) are cached in memory, so each judgment costs one batched HTTP call.
+- **`rules`** — bundled deterministic rules for known shell risks, repeated failures, forced code review, and memory type patterns. It is configured as the default last-resort fallback and uses no API key or tokens. If any question in a request has no matching rule, the backend returns `unavailable` and the calling module uses its existing safe fallback; it never presents a zero probability as a model judgment. Rules do not make Jev or another model appear available to model-only features.
 
 ### Comparing backends (`npm run eval`)
 
@@ -249,6 +250,7 @@ Notes:
 - The legacy top-level `jev.model` / `jev.timeoutMs` keys keep working; they fill gaps in `judgment.backends.typesafe`.
 - `judgment.modules` keys are module names: `router`, `toolGate`, `failureJudge`, `contextGate`, `skillGate`, `memoryGate`, `memorySearch`, `compaction`, `reviewGate`, `guiRouter`, `decision`.
 - When the primary backend is unavailable or fails, `judgment.fallback` gets one attempt; beyond that each module falls back to its local heuristics as before.
+- Set `judgment.fallback` to `null` to disable the built-in rules fallback.
 
 ### Language
 

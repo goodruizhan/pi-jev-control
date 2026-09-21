@@ -89,19 +89,19 @@ async function runAndRecord(
   return outcome;
 }
 
-/**
- * Whether any backend in the module's chain can serve requests right now.
- */
+/** Whether a model backend in the module's chain can serve requests. */
 export function isJudgeAvailable(module?: string): boolean {
   const primary = resolveBackend(module ?? "");
-  if (primary.isAvailable()) return true;
-  return resolveFallback(primary)?.isAvailable() ?? false;
+  if (primary.confidenceKind !== "binary" && primary.isAvailable()) return true;
+  const fallback = resolveFallback(primary);
+  return fallback?.confidenceKind !== "binary" && fallback?.isAvailable() === true;
 }
 
-/** Human-readable reason when no backend can serve the module. */
+/** Human-readable reason when no model backend can serve the module. */
 export function getJudgeUnavailableReason(module?: string): string | null {
   if (isJudgeAvailable(module)) return null;
   const reasons = allConfiguredBackends()
+    .filter((backend) => backend.confidenceKind !== "binary")
     .map((backend) => `${backend.name}: ${backend.unavailableReason() ?? "ok"}`)
     .join("; ");
   return reasons || "no judgment backend configured";

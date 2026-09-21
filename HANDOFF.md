@@ -15,8 +15,8 @@
 | 项 | 值 |
 |---|---|
 | 版本 | 0.7.0 |
-| 最新提交 | `0475334`（已推送 origin/main，工作区干净） |
-| 测试 | 49/49 通过（`npm test`） |
+| 基线提交 | `9aab129`（v0.7 交接文档）；后续改动以 `git status` 为准 |
+| 测试 | 运行 `npm test` 查看当前测试数与结果 |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
@@ -33,6 +33,7 @@ src/judge/          ← 中立判断核心（v0.6 新增，替换旧 src/jev/）
   typesafe-backend.ts  Jev 及 Jev 兼容克隆 ← 全项目唯一 import @typesafe-ai/sdk 的文件
   openai-backend.ts     Ollama/小模型：JSON 输出 + 模糊选项匹配 + 概率钳制
   embedding-backend.ts  向量相似度（v0.7）：余弦相似度+softmax，候选向量内存缓存
+  rules-backend.ts      确定性规则后端：复用各模块的本地规则；无匹配规则则整次请求返回 unavailable
   eval.ts               后端评测（v0.7）：JSONL 记录 + 两后端答案对比（agree/distance）
   registry.ts       后端解析：judgment.modules → judgment.backend → fallback
   facade.ts         judge() 统一入口 + 统计 + 一次性 fallback 链 + eval 记录钩子
@@ -94,16 +95,15 @@ interface JudgmentBackend {
 
 | 项 | 说明 |
 |---|---|
-| RulesBackend 收编 | 各模块的 fallback 启发式散落在各处，没有统一成一个后端 |
 | Reranker / Guard 后端 | 仅留接口未实现 |
 
-已完成：P4 EmbeddingBackend（`embedding-backend.ts`，`type: "embedding"`，余弦相似度+softmax，候选向量内存缓存）；P5 后端评测（facade 记录钩子 `judgment.eval.recordPath` → JSONL，`npm run eval` 用 `test/eval-backends.mjs` 重放对比，`test/eval/cases.jsonl` 为带标注的种子数据集）。
+已完成：P4 EmbeddingBackend（`embedding-backend.ts`，`type: "embedding"`，余弦相似度+softmax，候选向量内存缓存）；P5 后端评测（facade 记录钩子 `judgment.eval.recordPath` → JSONL，`npm run eval` 用 `test/eval-backends.mjs` 重放对比，`test/eval/cases.jsonl` 为带标注的种子数据集）；RulesBackend 收编（本地规则共享，默认备用后端；无法回答的问题返回 `unavailable`，模型专用功能仍按模型可用性判断）。
 
 ## 7. 开发流程
 
 ```bash
 npm run typecheck     # tsc --noEmit
-npm test              # build + 49 个单测（不联网）
+npm test              # build + 本地单测（不联网）
 npm run test:jev      # 真实 Jev 冒烟，需要 TYPESAFE_API_KEY
 npm run eval          # 后端对比评测，重放 test/eval/cases.jsonl（联网）
 ```

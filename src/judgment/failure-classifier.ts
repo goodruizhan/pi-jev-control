@@ -3,6 +3,8 @@ import { loadConfig } from "../config.js";
 import { judge, isJudgeAvailable } from "../judge/facade.js";
 import { choiceOf } from "../judge/ir.js";
 import { FAILURE_TYPE_QUESTION, RECOMMENDED_ACTION_QUESTION } from "../judge/questions.js";
+import { evaluateRepeatedFailure } from "../judge/rules-backend.js";
+import { backendTypeOf } from "../judge/registry.js";
 import { generateFailureSignature, normalizeFailureType, normalizeRecommendedAction } from "../judge/normalize.js";
 import { getFailureCountByActionKey, getFailureCountByFamily, recordFailure } from "../state/runtime-state.js";
 import { storeFailureMemory } from "../memory/memory-gate.js";
@@ -39,7 +41,8 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
     );
     const signature = generateFailureSignature(toolName, inputSummary, errorExcerpt);
 
-    if (sameFailureCount >= 1) {
+    const repeatVerdict = evaluateRepeatedFailure(sameFailureCount);
+    if (repeatVerdict) {
       return appendAssessment(event, {
         signature, actionKey, commandCategory, toolName, inputSummary, errorExcerpt,
         failureType: "repeated", recommendedAction: "do_not_retry", sameFailureCount, source: "local-rule",
@@ -67,6 +70,11 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
     if (!result.ok) {
       console.warn("[pi-jev-control] Failure Judge Jev call failed:", result.errorType, result.error);
       return appendUnavailableAssessment(event, result.errorType, result.error);
+    }
+
+    const answeredByRules = backendTypeOf(result.backend) === "rules";
+    if (answeredByRules) {
+      return appendUnavailableAssessment(event, "unavailable", "model backends unavailable — deterministic rules fallback");
     }
 
     return appendAssessment(event, {

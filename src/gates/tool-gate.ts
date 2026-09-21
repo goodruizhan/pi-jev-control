@@ -5,7 +5,8 @@ import { choiceOf } from "../judge/ir.js";
 import { TOOL_GATE_QUESTION } from "../judge/questions.js";
 import { normalizeToolGateDecision } from "../judge/normalize.js";
 import type { ToolGateDecision } from "../types.js";
-import { SAFE_READONLY_TOOLS, SAFE_BASH_COMMANDS, DANGEROUS_BASH_PATTERNS } from "../types.js";
+import { SAFE_READONLY_TOOLS } from "../types.js";
+import { backendTypeOf } from "../judge/registry.js";
 import {
   approveAction,
   clearApprovedActions,
@@ -132,14 +133,10 @@ export function setupToolGate(pi: ExtensionAPI): void {
   });
 }
 
-type ShellRisk = "safe" | "dangerous" | "uncertain";
-
-/** Classify a complete shell command. Safe fast paths never accept composition. */
-export function classifyShellCommand(command: string): ShellRisk {
-  if (isDangerousBashCommand(command)) return "dangerous";
-  if (isSafeBashCommand(command)) return "safe";
-  return "uncertain";
-}
+// Shell classification rules live in the rules backend (single source of
+// truth); re-exported here for existing callers/tests.
+export { classifyShellCommand, isDangerousBashCommand, isSafeBashCommand } from "../judge/rules-backend.js";
+import { classifyShellCommand } from "../judge/rules-backend.js";
 
 async function judgeUnknownTool(
   toolName: string,
@@ -154,6 +151,7 @@ async function judgeUnknownTool(
     const result = await judge(
       {
         tool: toolName,
+        command: typeof toolInput.command === "string" ? toolInput.command.slice(0, 1000) : "",
         input_summary: inputSummary,
         mutates_or_has_side_effects: !SAFE_READONLY_TOOLS.has(toolName),
       },
@@ -161,7 +159,9 @@ async function judgeUnknownTool(
       { module: "toolGate", signal: ctx.signal },
     );
 
-    if (result.ok) {
+    // A rules-backend answer is "no model judgment" — keep the fail-closed
+    // unavailable path rather than letting deterministic rules relax the gate.
+    if (result.ok && backendTypeOf(result.backend) !== "rules") {
       const gateAnswer = choiceOf(result.answers.tool_gate);
       const decision = normalizeToolGateDecision(gateAnswer.choice);
       const confidence = gateAnswer.confidence;
@@ -232,7 +232,6 @@ async function judgeUnknownTool(
   if (!blocked) rememberApprovedWrite(toolName, actionKey, config.toolGate.reuseApprovedWrites);
   return blocked;
 }
-
 function rememberApprovedWrite(toolName: string, actionKey: string, enabled: boolean): void {
   if (enabled && isWriteLikeTool(toolName)) approveAction(actionKey);
 }
@@ -270,43 +269,4 @@ async function confirmOrBlock(
 function block(reason: string) {
   recordToolGateBlock();
   return { block: true, reason };
-}
-
-/**
- * Check if a bash command matches known safe patterns.
- * Uses explicit prefix matching, not includes().
- */
-export function isSafeBashCommand(command: string): boolean {
-  const trimmed = command.trim();
-
-  // Reject chaining, redirection, command substitution, and multi-line commands.
-  if (/[;&|<>`\r\n]/.test(trimmed) || trimmed.includes("$(")) return false;
-
-  // Shell find can execute or delete; the built-in Pi find tool remains safe.
-  if (/^find(?:\s|$)/i.test(trimmed)) return false;
-
-  // These options can execute a helper or write output despite a read-like command name.
-  if (/^rg(?:\s|$)/i.test(trimmed) && /(?:^|\s)--pre(?:=|\s)/i.test(trimmed)) return false;
-  if (/^git\s+(?:diff|log)(?:\s|$)/i.test(trimmed) && /(?:^|\s)(?:--output(?:=|\s)|--ext-diff\b|--textconv\b)/i.test(trimmed)) return false;
-
-  for (const safe of SAFE_BASH_COMMANDS) {
-    const lower = trimmed.toLowerCase();
-    const safeLower = safe.toLowerCase();
-    if (lower === safeLower) return true;
-    if (lower.startsWith(safeLower + " ")) return true;
-    if (lower.startsWith(safeLower + "\t")) return true;
-  }
-
-  return false;
-}
-
-/**
- * Check if a bash command matches known dangerous patterns.
- */
-export function isDangerousBashCommand(command: string): boolean {
-  const trimmed = command.trim();
-  for (const pattern of DANGEROUS_BASH_PATTERNS) {
-    if (pattern.test(trimmed)) return true;
-  }
-  return false;
 }

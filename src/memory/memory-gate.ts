@@ -4,6 +4,7 @@ import { judge, isJudgeAvailable } from "../judge/facade.js";
 import { choiceOf } from "../judge/ir.js";
 import { MEMORY_TYPE_QUESTION, MEMORY_DURABILITY_QUESTION } from "../judge/questions.js";
 import { normalizeMemoryType } from "../judge/normalize.js";
+import { CONSTRAINT_PATTERNS, DECISION_PATTERNS } from "../judge/rules-backend.js";
 import type { MemoryType, MemoryRecord } from "../types.js";
 import { appendMemory, appendFailure, getProjectHash, upsertFailure } from "./store.js";
 import { generateActionFingerprint } from "../judge/normalize.js";
@@ -27,35 +28,6 @@ import { notifyAutomatic } from "../ui.js";
  *
  * Never analyzes every read/grep call.
  */
-
-// Phrases that indicate a constraint
-const CONSTRAINT_PATTERNS = [
-  /不要.*修改/,
-  /不要.*改/,
-  /不要动/,
-  /别改/,
-  /别动/,
-  /don't modify/i,
-  /don't change/i,
-  /never touch/i,
-  /always use/i,
-  /must use/i,
-  /不要用/,
-  /必须用/,
-  /禁止/,
-  /不允许/,
-];
-
-// Phrases that indicate a decision
-const DECISION_PATTERNS = [
-  /决定用/,
-  /decided to use/i,
-  /will use/i,
-  /choosing/i,
-  /选择用/,
-  /方案是/,
-  /采用/,
-];
 
 /**
  * Check if user input contains a constraint.

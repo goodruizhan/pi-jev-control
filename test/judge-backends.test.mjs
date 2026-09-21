@@ -5,6 +5,7 @@ import { loadConfig, invalidateConfig } from "../dist/src/config.js";
 import { resolveBackend, resolveFallback, allConfiguredBackends, resetJudgeBackends } from "../dist/src/judge/registry.js";
 import { OpenAiCompatibleBackend } from "../dist/src/judge/openai-backend.js";
 import { choice, noul, score } from "../dist/src/judge/ir.js";
+import { isJudgeAvailable, judge } from "../dist/src/judge/facade.js";
 
 // ── Config backward compatibility ───────────────────────────────────────
 
@@ -21,15 +22,34 @@ test("legacy jev.* settings flow into the typesafe judgment backend", () => {
   assert.equal(typesafe.timeoutMs, config.jev.timeoutMs);
 });
 
-test("registry resolves the default backend and no fallback by default", () => {
+test("registry resolves the default backend and the rules fallback by default", () => {
   resetJudgeBackends();
   const backend = resolveBackend("router");
   assert.equal(backend.name, "typesafe");
   assert.equal(backend.confidenceKind, "calibrated");
-  assert.equal(resolveFallback(backend), null);
-  assert.equal(allConfiguredBackends().length, 1);
+  const fallback = resolveFallback(backend);
+  assert.ok(fallback);
+  assert.equal(fallback.name, "rules");
+  assert.equal(fallback.confidenceKind, "binary");
+  assert.equal(allConfiguredBackends().length, 2);
 });
 
+test("rules fallback does not masquerade as a model or invent Noul probabilities", async () => {
+  const previous = process.env.TYPESAFE_API_KEY;
+  try {
+    delete process.env.TYPESAFE_API_KEY;
+    resetJudgeBackends();
+    assert.equal(isJudgeAvailable(), false);
+    const outcome = await judge({}, { relevance: noul("Is this relevant?") }, { module: "contextGate" });
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.errorType, "unavailable");
+    assert.equal(outcome.backend, "rules");
+  } finally {
+    if (previous === undefined) delete process.env.TYPESAFE_API_KEY;
+    else process.env.TYPESAFE_API_KEY = previous;
+    resetJudgeBackends();
+  }
+});
 // ── IR builders ─────────────────────────────────────────────────────────
 
 test("IR builders match the System One wire shape", () => {

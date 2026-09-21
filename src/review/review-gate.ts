@@ -4,6 +4,8 @@ import { judge, isJudgeAvailable } from "../judge/facade.js";
 import { choiceOf } from "../judge/ir.js";
 import { REVIEW_NEEDED_QUESTION } from "../judge/questions.js";
 import { normalizeReviewDecision } from "../judge/normalize.js";
+import { evaluateReviewForced } from "../judge/rules-backend.js";
+import { backendTypeOf } from "../judge/registry.js";
 import type { ReviewDecision } from "../types.js";
 import { tr } from "../i18n.js";
 
@@ -23,23 +25,7 @@ import { tr } from "../i18n.js";
  * Jev only judges whether review is needed — doesn't review code itself.
  */
 
-// Patterns that force strong_review
-const FORCE_STRONG_PATTERNS = [
-  /garbage\s*collect/i,
-  /\bGC\b/i,
-  /multi[-]?thread/i,
-  /thread\s*saf/i,
-  /replication/i,
-  /replicat/i,
-  /gameplay\s*ability/i,
-  /\bGAS\b/i,
-  /engine\s*internal/i,
-  /engine\s*source/i,
-  /UObject\s*lifecycle/i,
-  /UObject\s*alloc/i,
-  /virtual\s*destructor/i,
-  /override\s*virtual/i,
-];
+// Forced strong_review patterns live in the rules backend (single source of truth).
 
 export interface ReviewGateResult {
   decision: ReviewDecision;
@@ -75,38 +61,15 @@ export async function judgeReview(
       reason: "Review Gate disabled",
     };
   }
-  // Step 1: Check forced patterns
+  // Steps 1-3: forced strong_review rules (shared with the rules backend)
   const description = params.description ?? "";
-  const combinedText = [description, ...params.fileTypes].join(" ");
-
-  for (const pattern of FORCE_STRONG_PATTERNS) {
-    if (pattern.test(combinedText)) {
-      return {
-        decision: "strong_review",
-        confidence: 1.0,
-        forced: true,
-        reason: `Forced by pattern: ${pattern}`,
-      };
-    }
-  }
-
-  // Step 2: Check core flags
-  if (params.isCoreSystem || params.involvesGC || params.involvesThreading || params.involvesReplication || params.involvesGAS) {
+  const forced = evaluateReviewForced(params);
+  if (forced) {
     return {
       decision: "strong_review",
-      confidence: 1.0,
+      confidence: forced.confidence,
       forced: true,
-      reason: "Core system involvement (core/GC/threading/replication/GAS)",
-    };
-  }
-
-  // Step 3: Check file count for large refactoring
-  if (params.modifiedFiles >= 10) {
-    return {
-      decision: "strong_review",
-      confidence: 0.9,
-      forced: true,
-      reason: `Large refactoring: ${params.modifiedFiles} files modified`,
+      reason: forced.reason,
     };
   }
 
@@ -141,12 +104,16 @@ export async function judgeReview(
     signal,
   });
 
-  if (!result.ok) {
+  // A rules-backend answer means no model judgment was available — treat it
+  // as the heuristic fallback instead of trusting deterministic answers here.
+  if (!result.ok || backendTypeOf(result.backend) === "rules") {
     return {
       decision: "normal_review",
       confidence: 0,
       forced: false,
-      reason: `Jev failed: ${result.error} — heuristic fallback`,
+      reason: result.ok
+        ? "Heuristic fallback (deterministic rules — model backends unavailable)"
+        : `Jev failed: ${result.error} — heuristic fallback`,
     };
   }
 

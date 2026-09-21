@@ -184,6 +184,10 @@ pi install git:github.com/goodruizhan/pi-jev-control
 
 项目级配置文件为 `<project>/.pi/jev-control.json`，其中的设置会覆盖全局配置。
 
+### 判断后端
+
+默认使用 `typesafe`（Jev），并将内置的 `rules` 规则后端作为最后一道备用后端。规则后端无需 API 密钥或 token，负责已知的 Shell 风险、重复失败、强制代码审查和记忆类型识别。一次请求中只要有问题无法由规则回答，整个请求就返回 `unavailable`，相应模块继续使用原有的安全回退；规则结果不会让只依赖模型的功能误判为模型可用。可通过 `judgment.fallback` 指定其他备用后端，或设为 `null` 禁用默认备用后端。
+
 ### 语言
 
 面向用户的提示、确认框、状态消息和工具结果支持英文与简体中文。英文为默认语言。可在配置中设置 `"language": "zh-CN"`，也可以在 Pi 中切换并持久保存全局语言：
