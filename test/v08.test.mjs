@@ -40,6 +40,22 @@ test("skill lexical floor favors exact technology and skill-name matches", () =>
   assert.equal(unrelated, 0);
 });
 
+test("skill lexical floor recognizes Chinese interaction intent against English skill descriptions", () => {
+  const query = "在 UE5 中实现一个简单的角色拾取物交互功能，使用 overlap/trace 检测，拾取后销毁 Actor";
+  const interaction = scoreSkillLexically(
+    query,
+    "ue5-world-interaction",
+    "UE5.6/UE5.7 world interaction systems for pickups, spawners, overlap/trace checks, and visual feedback.",
+  );
+  const unrelated = scoreSkillLexically(
+    query,
+    "indiedev-ue5-csv-process",
+    "UE5 CSV DataTable processing, ID allocation, weapon properties, and mesh synchronization.",
+  );
+  assert.ok(interaction >= 0.55, `expected Chinese interaction intent to match, got ${interaction}`);
+  assert.ok(interaction > unrelated, `expected interaction skill ${interaction} > unrelated skill ${unrelated}`);
+});
+
 test("judgment answer validation rejects incomplete and invalid results", () => {
   const questions = {
     pick: choice("Pick", { a: null, b: null }),

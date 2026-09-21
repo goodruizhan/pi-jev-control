@@ -6,6 +6,10 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 
 ## v0.8 Search & Backend Reliability
 
+### v0.8.1 Skill ranking precision
+
+- **Bilingual skill matching** — Chinese interaction terms such as pickup, overlap, trace, actor, and blueprint are normalized before the lexical floor, protecting explicit user intent when skill descriptions are English
+
 - **Natural-language code search** — `jev_search_code` expands requests into bounded literal terms, applies local lexical ranking, then delegates to the judgment reranker instead of treating a full sentence as one regex
 - **Skill ranking** — folded/literal YAML frontmatter is parsed correctly, and an exact-token relevance floor stabilizes Jev scores for explicit technology/skill-name matches
 - **Answer contract validation** — missing, out-of-range, or undeclared backend answers fail safely and enter the configured fallback chain

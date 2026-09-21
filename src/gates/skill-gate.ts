@@ -246,7 +246,26 @@ async function rankSkills(
 
 const SKILL_STOP_WORDS = new Set([
   "a", "an", "and", "build", "for", "in", "is", "of", "on", "the", "to", "use", "with",
+  // Common Chinese function words and task scaffolding add noise to the
+  // lexical floor; Jev still sees the complete natural-language query.
+  "在", "中", "为", "和", "及", "的", "一个", "简单", "实现", "功能", "使用", "进行", "然后", "后", "检测",
 ]);
+
+// The skill catalogue is predominantly English while user tasks are often
+// Chinese. Normalize high-signal bilingual terms before calculating the
+// deterministic floor. This does not replace Jev ranking; it only protects an
+// explicit technology/workflow match from a low Noul in a large batch.
+const SKILL_TERM_ALIASES: Record<string, string> = {
+  "pickup": "pickup", "pickups": "pickup", "拾取": "pickup", "拾取物": "pickup", "捡起": "pickup",
+  "交互": "interaction", "互动": "interaction", "interaction": "interaction", "interactions": "interaction",
+  "生成": "spawn", "生成器": "spawner", "生成逻辑": "spawn", "spawn": "spawn", "spawner": "spawner",
+  "重叠": "overlap", "重叠检测": "overlap", "碰撞": "collision", "overlap": "overlap",
+  "射线": "trace", "追踪": "trace", "trace": "trace",
+  "角色": "actor", "actor": "actor", "生命周期": "lifecycle", "销毁": "destroy", "销毁actor": "destroy",
+  "半径": "radius", "交互半径": "radius", "可视反馈": "feedback", "视觉反馈": "feedback", "反馈": "feedback",
+  "数据表": "datatable", "表格": "table", "网格体": "mesh", "网格": "mesh", "同步": "sync",
+  "材质": "material", "蓝图": "blueprint", "行为树": "behavior", "黑板": "blackboard",
+};
 
 /** Exact-token relevance floor used to stabilize semantic skill ranking. */
 export function scoreSkillLexically(query: string, name: string, description: string): number {
@@ -263,10 +282,28 @@ export function scoreSkillLexically(query: string, name: string, description: st
 }
 
 function skillTokens(text: string): Set<string> {
-  const tokens = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-  return new Set(tokens
-    .map((token) => token.length > 4 && token.endsWith("s") ? token.slice(0, -1) : token)
-    .filter((token) => token.length >= 2 && !SKILL_STOP_WORDS.has(token)));
+  const lowered = text.toLowerCase();
+  const tokens = lowered.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const normalized = new Set<string>();
+
+  for (const rawToken of tokens) {
+    const token = rawToken.length > 4 && rawToken.endsWith("s") ? rawToken.slice(0, -1) : rawToken;
+    if (token.length < 2 || SKILL_STOP_WORDS.has(token)) continue;
+    const canonical = SKILL_TERM_ALIASES[token];
+    // Long unsegmented Chinese sentences are not useful lexical terms. Their
+    // meaningful parts are recovered by the substring aliases below.
+    if (canonical) normalized.add(canonical);
+    else if (!/[\u3400-\u9fff]/u.test(token) || token.length <= 4) normalized.add(token);
+  }
+
+  // CJK has no whitespace boundaries, so recover aliases embedded in phrases
+  // such as “角色拾取物交互功能”. English terms are already tokenized above.
+  for (const [alias, canonical] of Object.entries(SKILL_TERM_ALIASES)) {
+    if (/^[\u3400-\u9fff]+$/u.test(alias) && lowered.includes(alias)) {
+      normalized.add(canonical);
+    }
+  }
+  return normalized;
 }
 
 /**
