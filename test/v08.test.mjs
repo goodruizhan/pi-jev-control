@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { buildSearchTerms } from "../dist/src/gates/context-gate.js";
-import { extractDescription } from "../dist/src/gates/skill-gate.js";
+import { extractDescription, scoreSkillLexically } from "../dist/src/gates/skill-gate.js";
 import { validateJudgeAnswers } from "../dist/src/judge/facade.js";
 import { choice, noul, score } from "../dist/src/judge/ir.js";
 import { PLUGIN_VERSION } from "../dist/src/version.js";
@@ -26,6 +26,18 @@ test("skill descriptions support folded and literal YAML frontmatter", () => {
     extractDescription("---\nname: literal\ndescription: |\n  First line\n  Second line\n---\n# Literal"),
     "First line\nSecond line",
   );
+});
+
+test("skill lexical floor favors exact technology and skill-name matches", () => {
+  const query = "build a TypeSafe Jev judgment backend and validate calibrated confidence";
+  const typesafe = scoreSkillLexically(
+    query,
+    "typesafe-ai",
+    "TypeSafe System One models including Jev return typed judgments and probabilities.",
+  );
+  const unrelated = scoreSkillLexically(query, "kdocs", "Create and edit cloud documents and spreadsheets.");
+  assert.ok(typesafe >= 0.55, `expected an exact-match floor, got ${typesafe}`);
+  assert.equal(unrelated, 0);
 });
 
 test("judgment answer validation rejects incomplete and invalid results", () => {

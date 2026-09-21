@@ -224,17 +224,49 @@ async function rankSkills(
     throw new Error(result.error);
   }
 
-  // Sort by relevance probability descending
+  // Blend calibrated semantic relevance with a deterministic lexical floor.
+  // The floor protects exact technology/skill-name matches from occasional
+  // low Noul scores in large multi-skill batches, while Jev still handles
+  // semantic and cross-language matches with no token overlap.
   const scored = skills.map((s, i) => {
     const answer = result.answers[`rel_${i}`] as { noul: number } | undefined;
+    const modelRelevance = answer?.noul ?? 0;
+    const lexicalRelevance = scoreSkillLexically(query, s.name, s.description);
     return {
       ...s,
-      relevance: answer?.noul ?? 0,
+      relevance: lexicalRelevance > 0
+        ? Math.max(modelRelevance * 0.8, lexicalRelevance)
+        : modelRelevance,
     };
   });
 
   scored.sort((a, b) => b.relevance - a.relevance);
   return scored;
+}
+
+const SKILL_STOP_WORDS = new Set([
+  "a", "an", "and", "build", "for", "in", "is", "of", "on", "the", "to", "use", "with",
+]);
+
+/** Exact-token relevance floor used to stabilize semantic skill ranking. */
+export function scoreSkillLexically(query: string, name: string, description: string): number {
+  const queryTerms = skillTokens(query);
+  if (queryTerms.size === 0) return 0;
+  const nameTerms = skillTokens(name);
+  const descriptionTerms = skillTokens(description);
+  let matchedWeight = 0;
+  for (const term of queryTerms) {
+    if (nameTerms.has(term)) matchedWeight += 2;
+    else if (descriptionTerms.has(term)) matchedWeight += 1;
+  }
+  return Math.min(1, matchedWeight / queryTerms.size);
+}
+
+function skillTokens(text: string): Set<string> {
+  const tokens = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  return new Set(tokens
+    .map((token) => token.length > 4 && token.endsWith("s") ? token.slice(0, -1) : token)
+    .filter((token) => token.length >= 2 && !SKILL_STOP_WORDS.has(token)));
 }
 
 /**
