@@ -53,6 +53,25 @@ test("RulesBackend handles tool-gate states deterministically", async () => {
   assert.equal(unknown.errorType, "unavailable");
 });
 
+test("RulesBackend accepts serialized tool-call state", async () => {
+  const backend = new RulesBackend({ name: "rules" });
+  const questions = { tool_gate: TOOL_GATE_QUESTION };
+
+  const allow = await run(backend, questions, {
+    tool_name: "read",
+    input: { path: "src/index.ts" },
+  });
+  assert.equal(allow.ok, true);
+  assert.equal(choiceOf(allow.answers["tool_gate"]).choice, "allow");
+
+  const confirm = await run(backend, questions, {
+    tool_name: "bash",
+    input: { command: "rm -rf node_modules" },
+  });
+  assert.equal(confirm.ok, true);
+  assert.equal(choiceOf(confirm.answers["tool_gate"]).choice, "confirm");
+});
+
 test("RulesBackend classifies repeated failures", async () => {
   const backend = new RulesBackend({ name: "rules" });
   const questions = {

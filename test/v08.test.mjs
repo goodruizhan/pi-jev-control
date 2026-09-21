@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { buildSearchTerms } from "../dist/src/gates/context-gate.js";
-import { extractDescription, scoreSkillLexically } from "../dist/src/gates/skill-gate.js";
+import { extractDescription, isSkillRelevant, scoreSkillLexically } from "../dist/src/gates/skill-gate.js";
 import { validateJudgeAnswers } from "../dist/src/judge/facade.js";
 import { choice, noul, score } from "../dist/src/judge/ir.js";
 import { PLUGIN_VERSION } from "../dist/src/version.js";
@@ -54,6 +54,29 @@ test("skill lexical floor recognizes Chinese interaction intent against English 
   );
   assert.ok(interaction >= 0.55, `expected Chinese interaction intent to match, got ${interaction}`);
   assert.ok(interaction > unrelated, `expected interaction skill ${interaction} > unrelated skill ${unrelated}`);
+});
+
+test("semantic-only skill matches need a higher confidence floor", () => {
+  assert.equal(
+    isSkillRelevant(
+      "写一个 Python 脚本打印 Hello World，不涉及 UE5、插件或云文档",
+      "ue5-world-interaction",
+      "UE5 world interaction systems for pickups and overlap checks.",
+      0.57,
+      0.55,
+    ),
+    false,
+  );
+  assert.equal(
+    isSkillRelevant(
+      "角色拾取物交互，使用 overlap/trace 并销毁 Actor",
+      "ue5-world-interaction",
+      "UE5 world interaction systems for pickups and overlap checks.",
+      0.57,
+      0.55,
+    ),
+    true,
+  );
 });
 
 test("judgment answer validation rejects incomplete and invalid results", () => {

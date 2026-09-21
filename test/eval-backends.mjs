@@ -17,6 +17,9 @@
  *
  * Defaults: dataset=test/eval/cases.jsonl, backends=<reference plus every
  * configured non-binary model backend>, reference=<configured judgment.backend>.
+ * Binary partial backends (for example `rules`) report intentionally
+ * unsupported questions separately instead of treating abstention as a model
+ * failure.
  */
 
 import * as fs from "node:fs";
@@ -77,6 +80,7 @@ for (const { name, backend } of candidates) {
     available: backend?.isAvailable() ?? false,
     reason: backend?.unavailableReason?.() ?? (backend ? null : "not configured"),
     cases: 0,
+    unsupported: 0,
     failed: 0,
     compared: 0,
     agreed: 0,
@@ -94,7 +98,11 @@ for (const { name, backend } of candidates) {
     );
     summary.cases += 1;
     if (!outcome.ok) {
-      summary.failed += 1;
+      if (backend.confidenceKind === "binary" && outcome.errorType === "unavailable") {
+        summary.unsupported += 1;
+      } else {
+        summary.failed += 1;
+      }
       continue;
     }
     summary.latencySum += outcome.latencyMs;
@@ -158,7 +166,8 @@ for (const summary of summaries) {
     console.log(summary.name.padEnd(18), "-".padEnd(8), "-".padEnd(7), "-".padEnd(7), "-".padEnd(7), "-".padEnd(10), summary.reason ?? "unavailable");
     continue;
   }
-  const succeeded = summary.cases - summary.failed;
+  const comparableCases = summary.cases - summary.unsupported;
+  const succeeded = comparableCases - summary.failed;
   if (succeeded > 0) anySucceeded = true;
   const agree = summary.compared > 0 ? `${((summary.agreed / summary.compared) * 100).toFixed(1)}%` : "-";
   const distance = summary.compared > 0 ? (summary.distanceSum / summary.compared).toFixed(3) : "-";
@@ -166,12 +175,15 @@ for (const summary of summaries) {
   const latency = succeeded > 0 ? `${Math.round(summary.latencySum / succeeded)}ms` : "-";
   console.log(
     summary.name.padEnd(18),
-    `${succeeded}/${summary.cases}`.padEnd(8),
+    `${succeeded}/${comparableCases}`.padEnd(8),
     agree.padEnd(7),
     distance.padEnd(7),
     confidence.padEnd(7),
     latency.padEnd(10),
-    summary.failed > 0 ? `${summary.failed} failed` : "",
+    [
+      summary.failed > 0 ? `${summary.failed} failed` : "",
+      summary.unsupported > 0 ? `${summary.unsupported} unsupported` : "",
+    ].filter(Boolean).join(", "),
   );
 }
 

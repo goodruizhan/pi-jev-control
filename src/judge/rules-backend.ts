@@ -269,6 +269,27 @@ function answerQuestion(name: string, question: JudgeQuestionIR, state: StateRec
   return { type: "choice", choice: verdict.choice, confidence: verdict.confidence };
 }
 
+/**
+ * Accept both the internal judgment state and the serialized tool-call shape
+ * used by eval logs and external callers. Keeping this normalization here
+ * means each deterministic rule can continue to use its small canonical state.
+ */
+function normalizeRuleState(state: StateRecord): StateRecord {
+  const normalized = { ...state };
+  const input = state.input && typeof state.input === "object" && !Array.isArray(state.input)
+    ? state.input as Record<string, unknown>
+    : undefined;
+
+  if (typeof normalized.tool !== "string") {
+    const tool = state.tool_name ?? state.toolName;
+    if (typeof tool === "string") normalized.tool = tool;
+  }
+  if (typeof normalized.command !== "string" && typeof input?.command === "string") {
+    normalized.command = input.command;
+  }
+  return normalized;
+}
+
 // ── Backend ─────────────────────────────────────────────────────────────
 
 export interface RulesBackendOptions {
@@ -301,7 +322,8 @@ export class RulesBackend implements JudgmentBackend {
       return { ok: false, errorType: "unknown", error: "malformed judge request: missing questions", latencyMs: 0, backend: this.name };
     }
 
-    const state = (request.state && typeof request.state === "object" ? request.state : {}) as StateRecord;
+    const rawState = (request.state && typeof request.state === "object" ? request.state : {}) as StateRecord;
+    const state = normalizeRuleState(rawState);
     const answers: JudgeAnswers = {};
     for (const [name, question] of Object.entries(request.questions)) {
       if (!question || typeof question !== "object") {

@@ -6,6 +6,12 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 
 ## v0.8 Search & Backend Reliability
 
+### v0.8.2 Search roots, fallback compatibility, and skill abstention
+
+- **Root-relative search globs** — `jev_search_code` evaluates include patterns from each requested root, so nested roots correctly honor patterns such as `src/**/*.ts`
+- **Serialized fallback state** — the deterministic rules backend accepts both internal tool state and serialized `tool_name`/`input` calls used by evaluation logs
+- **Skill abstention** — semantic-only skill matches require higher confidence, and explicit exclusions such as “不涉及 UE5” prevent unrelated skills from being selected
+
 ### v0.8.1 Skill ranking precision
 
 - **Bilingual skill matching** — Chinese interaction terms such as pickup, overlap, trace, actor, and blueprint are normalized before the lexical floor, protecting explicit user intent when skill descriptions are English
@@ -19,7 +25,7 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 ## v0.7 Embedding Backend & Backend Evaluation
 
 - **Embedding backend** — zero-shot judgment via any OpenAI-compatible embeddings endpoint (cosine similarity + softmax; candidate embeddings cached in-memory)
-- **Backend evaluation** — record live judgments to JSONL (`judgment.eval.recordPath`) and replay them against other backends with `npm run eval` before switching models
+- **Backend evaluation** — record live judgments to JSONL (`judgment.eval.recordPath`) and replay them against other backends with `npm run eval` before switching models; intentional abstentions from partial backends such as rules are reported as `unsupported`, not model failures
 
 ## v0.6 Pluggable Judgment Backends
 
@@ -252,7 +258,7 @@ Backend types:
 Before swapping `judgment.backend` to a new model, measure it against the current one:
 
 1. **Record real traffic** — set `judgment.eval.recordPath` and use Pi normally. Every successful judgment is appended as one JSONL line (state, questions, answers, latency).
-2. **Replay** — `npm run eval` replays a dataset against every other configured backend and reports agreement rate, average distance, average confidence, and latency per backend. `--dataset <file>` points at your recording; the default is the bundled seed set `test/eval/cases.jsonl` with expected labels. `--backends a,b` and `--reference name` override the lineup.
+2. **Replay** — `npm run eval` replays a dataset against every other configured backend and reports agreement rate, average distance, average confidence, and latency per backend. `--dataset <file>` points at your recording; the default is the bundled seed set `test/eval/cases.jsonl` with expected labels. `--backends a,b` and `--reference name` override the lineup. Partial binary backends may report intentionally unsupported questions separately.
 
 The recording hook is best-effort and never blocks or breaks live judgments.
 

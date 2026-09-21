@@ -82,7 +82,13 @@ export function setupSkillGate(pi: ExtensionAPI): void {
       }
 
       if (rankedByJev) {
-        ranked = ranked.filter((skill) => (skill.relevance ?? 0) >= config.skillGate.relevanceThreshold);
+        ranked = ranked.filter((skill) => isSkillRelevant(
+          query,
+          skill.name,
+          skill.description,
+          skill.relevance ?? 0,
+          config.skillGate.relevanceThreshold,
+        ));
       }
 
       // Limit results. When Jev is unavailable, preserve discovery order instead of pretending it was ranked.
@@ -267,6 +273,29 @@ const SKILL_TERM_ALIASES: Record<string, string> = {
   "材质": "material", "蓝图": "blueprint", "行为树": "behavior", "黑板": "blackboard",
 };
 
+/**
+ * Decide whether a ranked skill is relevant enough to recommend.
+ *
+ * Semantic-only matches need a slightly higher bar than explicit lexical
+ * matches. This prevents generic tasks from loading an unrelated skill merely
+ * because a large batch produced a marginal Noul score, while preserving
+ * cross-language matches when the query contains a known technology/workflow
+ * term.
+ */
+export function isSkillRelevant(
+  query: string,
+  name: string,
+  description: string,
+  relevance: number,
+  threshold: number,
+): boolean {
+  if (!Number.isFinite(relevance) || relevance < threshold) return false;
+  if (hasExplicitSkillExclusion(query, name, description)) return false;
+  const lexicalRelevance = scoreSkillLexically(query, name, description);
+  const semanticOnlyThreshold = Math.max(threshold, 0.65);
+  return lexicalRelevance > 0 || relevance >= semanticOnlyThreshold;
+}
+
 /** Exact-token relevance floor used to stabilize semantic skill ranking. */
 export function scoreSkillLexically(query: string, name: string, description: string): number {
   const queryTerms = skillTokens(query);
@@ -279,6 +308,23 @@ export function scoreSkillLexically(query: string, name: string, description: st
     else if (descriptionTerms.has(term)) matchedWeight += 1;
   }
   return Math.min(1, matchedWeight / queryTerms.size);
+}
+
+function hasExplicitSkillExclusion(query: string, name: string, description: string): boolean {
+  const queryTokens = skillTokens(query);
+  const candidateTokens = new Set([...skillTokens(name), ...skillTokens(description)]);
+  const lowerQuery = query.toLowerCase();
+
+  for (const token of queryTokens) {
+    if (!candidateTokens.has(token)) continue;
+    // Tokens come from letters/numbers/CJK only, so they are safe to interpolate.
+    const exclusion = new RegExp(
+      `(?:不涉及|不使用|不要(?:使用)?|不需要|无需|不包括|排除|无关|not|without|excluding|no)\\s*(?:the\\s*)?${token}(?=$|[\\s,，。；;、])`,
+      "i",
+    );
+    if (exclusion.test(lowerQuery)) return true;
+  }
+  return false;
 }
 
 function skillTokens(text: string): Set<string> {

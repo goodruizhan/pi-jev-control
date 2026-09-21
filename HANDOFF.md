@@ -14,9 +14,9 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 0.8.1 |
-| 基线提交 | v0.8.1 提交以 `git log -1` 为准 |
-| 测试 | 70/70 通过（`npm test`） |
+| 版本 | 0.8.2 |
+| 基线提交 | v0.8.2 提交以 `git log -1` 为准 |
+| 测试 | 73/73 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
@@ -98,6 +98,10 @@ interface JudgmentBackend {
 | 项 | 说明 |
 |---|---|
 | Reranker / Guard 后端 | 仅留接口未实现 |
+| 技能排序拒答 | 已增加语义弱匹配置信度门槛和明确排除词处理 |
+| 检索根目录模式 | 已改为从每个请求 root 解释 glob pattern |
+| RulesBackend 序列化状态 | 已兼容 `tool_name`/`input` 评测与外部调用格式 |
+| 部分后端评测 | binary 后端主动拒答现在单独统计为 `unsupported` |
 
 已完成：P4 EmbeddingBackend（`embedding-backend.ts`，`type: "embedding"`，余弦相似度+softmax，候选向量内存缓存）；P5 后端评测（facade 记录钩子 `judgment.eval.recordPath` → JSONL，`npm run eval` 用 `test/eval-backends.mjs` 重放对比，`test/eval/cases.jsonl` 为带标注的种子数据集）；RulesBackend 收编（本地规则共享，默认备用后端；无法回答的问题返回 `unavailable`，模型专用功能仍按模型可用性判断）。
 

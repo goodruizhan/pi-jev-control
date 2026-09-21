@@ -219,7 +219,7 @@ async function searchWithRg(
   const searchTerms = buildSearchTerms(query);
   if (searchTerms.length === 0) return [];
 
-  const args = [
+  const baseArgs = [
     "--json",
     "--line-number",
     "--max-count", "2",
@@ -229,48 +229,57 @@ async function searchWithRg(
   ];
 
   for (const excluded of RG_EXCLUDES) {
-    args.push("--glob", `!**/${excluded}/**`);
+    baseArgs.push("--glob", `!**/${excluded}/**`);
   }
   for (const pattern of includePatterns) {
-    args.push("--glob", pattern);
+    baseArgs.push("--glob", pattern);
   }
 
   for (const term of searchTerms) {
-    args.push("--regexp", term);
+    baseArgs.push("--regexp", term);
   }
 
-  const relativeRoots = safeRoots.map((root) => {
-    const relative = path.relative(projectRoot, root);
-    return relative.length === 0 ? "." : relative;
-  });
-  args.push("--", ...relativeRoots);
-
-  const output = await runRipgrep(args, projectRoot, signal);
+  // Run rg from each requested root so include patterns are interpreted
+  // relative to that root. Running once from projectRoot makes a pattern such
+  // as `src/**/*.ts` fail silently when the root is a nested directory.
   const rawLimit = Math.min(400, Math.max(maxCandidates, maxCandidates * 4));
-  for (const line of output.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    let event: any;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
+  const searchedRoots = new Set<string>();
+  for (const root of safeRoots) {
+    if (searchedRoots.has(root)) continue;
+    searchedRoots.add(root);
+
+    const output = await runRipgrep([...baseArgs, "--", "."], root, signal);
+    const rootRelative = path.relative(projectRoot, root);
+    const rootPrefix = rootRelative.length === 0 ? "." : rootRelative;
+
+    for (const line of output.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let event: any;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (event?.type !== "match") continue;
+
+      const relativeFilePath = event.data?.path?.text;
+      const lineNumber = event.data?.line_number;
+      const preview = event.data?.lines?.text;
+      if (typeof relativeFilePath !== "string" || typeof lineNumber !== "number" || typeof preview !== "string") continue;
+
+      const filePath = rootPrefix === "." ? relativeFilePath : path.join(rootPrefix, relativeFilePath);
+      const key = `${filePath}:${lineNumber}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({
+        path: filePath,
+        line: lineNumber,
+        preview: preview.trim().slice(0, 500),
+        relevance: null,
+      });
+
+      if (results.length >= rawLimit) break;
     }
-    if (event?.type !== "match") continue;
-
-    const filePath = event.data?.path?.text;
-    const lineNumber = event.data?.line_number;
-    const preview = event.data?.lines?.text;
-    if (typeof filePath !== "string" || typeof lineNumber !== "number" || typeof preview !== "string") continue;
-
-    const key = `${filePath}:${lineNumber}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    results.push({
-      path: filePath,
-      line: lineNumber,
-      preview: preview.trim().slice(0, 500),
-      relevance: null,
-    });
 
     if (results.length >= rawLimit) break;
   }
