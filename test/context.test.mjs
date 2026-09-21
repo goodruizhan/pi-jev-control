@@ -28,6 +28,15 @@ test("context search returns real path, line, and preview on Windows", async () 
   assert.match(text, /line: \d+/);
   assert.match(text, /preview:/);
 
+  const naturalLanguageResult = await tool.execute(
+    "search-1b",
+    { query: "find shell command safety classification code", roots: [process.cwd()], maxResults: 5 },
+    undefined,
+    undefined,
+    { signal: undefined },
+  );
+  assert.match(naturalLanguageResult.content[0].text, /src[\\/]gates[\\/]tool-gate\.ts/);
+
   if (originalKey === undefined) delete process.env.TYPESAFE_API_KEY;
   else process.env.TYPESAFE_API_KEY = originalKey;
   resetClient();

@@ -14,9 +14,9 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 0.7.0 |
-| 基线提交 | `9aab129`（v0.7 交接文档）；后续改动以 `git status` 为准 |
-| 测试 | 运行 `npm test` 查看当前测试数与结果 |
+| 版本 | 0.8.0 |
+| 基线提交 | v0.8 提交以 `git log -1` 为准 |
+| 测试 | 68/68 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
@@ -36,7 +36,7 @@ src/judge/          ← 中立判断核心（v0.6 新增，替换旧 src/jev/）
   rules-backend.ts      确定性规则后端：复用各模块的本地规则；无匹配规则则整次请求返回 unavailable
   eval.ts               后端评测（v0.7）：JSONL 记录 + 两后端答案对比（agree/distance）
   registry.ts       后端解析：judgment.modules → judgment.backend → fallback
-  facade.ts         judge() 统一入口 + 统计 + 一次性 fallback 链 + eval 记录钩子
+  facade.ts         judge() 统一入口 + 答案契约验证 + 统计 + 一次性 fallback 链 + eval 记录钩子
   questions.ts      各模块的问题文本（prompt）
   normalize.ts      选择串 → 类型枚举（便宜/中等/强等），无 SDK 依赖
 
@@ -76,7 +76,7 @@ interface JudgmentBackend {
 ## 4. 关键设计决策
 
 1. **IR 字段名刻意对齐 SDK**（`noul`/`choice`/`confidence`/`probabilities`/`score`），这样换后端时上层几乎不用改。
-2. **`choiceOf(answer)` 收窄器**：后端返回形状不对时降级成 `{choice:"unknown", confidence:0}`，而不是崩。各模块统一用这个。
+2. **两层答案防线**：facade 先拒绝缺失、越界、类型错误或候选外答案并触发 fallback；`choiceOf(answer)` 再把模块侧异常形状收窄成 `{choice:"unknown", confidence:0}`，而不是崩。
 3. **向后兼容**：旧版顶层 `jev.model` / `jev.timeoutMs` 仍然有效，`config.ts` 的 `normalizeJudgmentConfig()` 会把它补进 `judgment.backends.typesafe`。老用户零迁移。
 4. **advisory 是默认门控模式**：`toolGate.mode: "advisory"` 时**从不弹确认框、从不拦截**，只发通知（且 `errors-only` 下通知也被抑制）。只有改成 `"enforce"` 才有 `ctx.ui.confirm()`。用户明确要求不打断工作流。
 5. **失败注记**：工具失败后 failure-classifier 会把 `[pi-jev-control 插件评估——并非工具输出]` 追加到工具结果里（原始结果不变、不阻塞）。由 `retryJudge.enabled` 总控；`retryJudge.appendToResult: false` 可只关掉追加文字、保留失败记忆和重试判断。
@@ -88,10 +88,12 @@ interface JudgmentBackend {
 3. **测试跑的是编译产物**：所有测试 `import "../dist/src/..."`，所以必须先 build。`npm test` 里已经 `npm run build &&` 前缀了。
 4. **`node --test test/` 在 Windows 上报 MODULE_NOT_FOUND**（把目录当模块解析）。必须用 glob：`node --test "test/*.test.mjs"`。
 5. **decisionCopilot 每回合最多 1 次调用**（`maxCallsPerTurn: 1`），第二次会返回 `turn_budget`。这是**设计如此**（鼓励批量），不是 bug。
-6. **`decisionCopilot.timeoutMs` 不能太紧**：批量最多 8 问，冷连接下 900ms 不够，默认已调到 3000ms。
-7. **编辑工具是原子操作**：一个 `oldText` 不匹配则整批全部不生效，容易误以为改成功了。改完务必看返回值。
+6. **各模块超时不能太紧**：冷连接实测约 0.8～1.2 秒；v0.8 默认 `guiRouter=2500ms`、`retryJudge=2500ms`、`decisionCopilot=5000ms`，用户配置仍可覆盖。
+7. **代码检索查询不能整句直接交给 rg**：自然语言整句几乎零命中且正则字符会破坏搜索。v0.8 用最多 8 个字面量术语扩大召回，再做本地词法排序和 Jev rerank。
+8. **SKILL.md 描述可能是多行 YAML**：`description: >` / `|` 必须读取后续缩进行，不能把 `>` 本身当描述。
+9. **编辑工具是原子操作**：一个 `oldText` 不匹配则整批全部不生效，容易误以为改成功了。改完务必看返回值。
 
-## 6. 已知待办（v0.7 后仍留，不是丢了）
+## 6. 已知待办（v0.8 后仍留，不是丢了）
 
 | 项 | 说明 |
 |---|---|

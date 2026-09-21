@@ -55,7 +55,7 @@ const DEFAULT_CONFIG: JevControlConfig = {
   retryJudge: {
     enabled: true,
     maxSameFailureRetries: 2,
-    timeoutMs: 1200,
+    timeoutMs: 2500,
     skipBenignExitCodes: true,
     appendToResult: true,
   },
@@ -88,7 +88,7 @@ const DEFAULT_CONFIG: JevControlConfig = {
   guiRouter: {
     enabled: true,
     confidenceThreshold: 0.7,
-    timeoutMs: 900,
+    timeoutMs: 2500,
     cacheTurns: 3,
   },
   decisionCopilot: {
@@ -96,7 +96,7 @@ const DEFAULT_CONFIG: JevControlConfig = {
     silent: true,
     maxCallsPerTurn: 1,
     maxQuestionsPerCall: 8,
-    timeoutMs: 3000,
+    timeoutMs: 5000,
     confidenceThreshold: 0.72,
     cacheTurns: 5,
   },

@@ -65,7 +65,17 @@ async function runAndRecord(
   request: JudgeRequestInput,
   options: JudgeCallContext,
 ): Promise<JudgeOutcome> {
-  const outcome = await backend.judge(request, { timeoutMs: options.timeoutMs, signal: options.signal });
+  const rawOutcome = await backend.judge(request, { timeoutMs: options.timeoutMs, signal: options.signal });
+  const validationError = rawOutcome.ok ? validateJudgeAnswers(request.questions, rawOutcome.answers) : null;
+  const outcome: JudgeOutcome = validationError
+    ? {
+        ok: false,
+        errorType: "unknown",
+        error: `invalid judgment response: ${validationError}`,
+        latencyMs: rawOutcome.latencyMs,
+        backend: rawOutcome.backend,
+      }
+    : rawOutcome;
   recordBackendUsage(backend.name, outcome.ok);
   if (outcome.ok) {
     recordRequest(options.module, outcome.usage, outcome.latencyMs);
@@ -87,6 +97,39 @@ async function runAndRecord(
     recordFailure(options.module);
   }
   return outcome;
+}
+
+/** Validate the backend-neutral answer contract before module code consumes it. */
+export function validateJudgeAnswers(questions: JudgeQuestions, answers: Record<string, unknown>): string | null {
+  for (const [name, question] of Object.entries(questions)) {
+    const answer = answers[name];
+    if (!answer || typeof answer !== "object") return `missing answer for ${name}`;
+    const value = answer as Record<string, unknown>;
+    if (value.type !== question.type) return `${name} has type ${String(value.type)}, expected ${question.type}`;
+
+    if (question.type === "noul") {
+      if (!isUnitNumber(value.noul)) return `${name}.noul must be a finite number in [0, 1]`;
+      continue;
+    }
+
+    if (!isUnitNumber(value.confidence)) return `${name}.confidence must be a finite number in [0, 1]`;
+    if (question.type === "choice") {
+      if (typeof value.choice !== "string" || !Object.hasOwn(question.criteria, value.choice)) {
+        return `${name}.choice is not one of the declared criteria`;
+      }
+      continue;
+    }
+
+    const maxScore = question.criteria.length - 1;
+    if (typeof value.score !== "number" || !Number.isFinite(value.score) || value.score < 0 || value.score > maxScore) {
+      return `${name}.score must be a finite number in [0, ${maxScore}]`;
+    }
+  }
+  return null;
+}
+
+function isUnitNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 /** Whether a model backend in the module's chain can serve requests. */

@@ -64,7 +64,10 @@ export class EmbeddingBackend implements JudgmentBackend {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
     this.model = options.model ?? null;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.temperature = options.temperature ?? DEFAULT_TEMPERATURE;
+    const configuredTemperature = options.temperature ?? DEFAULT_TEMPERATURE;
+    this.temperature = Number.isFinite(configuredTemperature) && configuredTemperature > 0
+      ? configuredTemperature
+      : DEFAULT_TEMPERATURE;
 
     const keyEnv = options.apiKeyEnv;
     this.apiKey = keyEnv ? process.env[keyEnv] ?? null : null;
@@ -123,6 +126,16 @@ export class EmbeddingBackend implements JudgmentBackend {
           ok: false,
           errorType: "unknown",
           error: `embedding count mismatch: got ${vectors.length}, expected ${allTexts.length}`,
+          latencyMs: Date.now() - startTime,
+          backend: this.name,
+        };
+      }
+      const dimension = vectors[0]?.length ?? 0;
+      if (dimension === 0 || vectors.some((vector) => vector.length !== dimension || vector.some((value) => !Number.isFinite(value)))) {
+        return {
+          ok: false,
+          errorType: "unknown",
+          error: "invalid embedding vectors: empty, non-finite, or inconsistent dimensions",
           latencyMs: Date.now() - startTime,
           backend: this.name,
         };

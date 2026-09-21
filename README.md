@@ -4,6 +4,14 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v0.8 Search & Backend Reliability
+
+- **Natural-language code search** — `jev_search_code` expands requests into bounded literal terms, applies local lexical ranking, then delegates to the judgment reranker instead of treating a full sentence as one regex
+- **Skill description parsing** — folded/literal YAML frontmatter (`description: >` / `description: |`) is parsed correctly
+- **Answer contract validation** — missing, out-of-range, or undeclared backend answers fail safely and enter the configured fallback chain
+- **Embedding hardening** — empty, non-finite, and inconsistent vectors are rejected; invalid temperatures use the safe default
+- **Runtime diagnostics** — `/jev status` reports the real version, usage labels are backend-neutral, and short default timeouts allow for cold connections
+
 ## v0.7 Embedding Backend & Backend Evaluation
 
 - **Embedding backend** — zero-shot judgment via any OpenAI-compatible embeddings endpoint (cosine similarity + softmax; candidate embeddings cached in-memory)
@@ -38,7 +46,7 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 - Repeated action/failure families short-circuit locally to `do_not_retry`
 - Retry circuit breaking starts after two same-family failures; remembered failures warn by default instead of blocking
 - Failure assessments are explicitly labeled as plugin output; set `retryJudge.appendToResult: false` to keep failure memory and retry judgment without touching tool output
-- Failure Judge timeout reduced to 1200 ms by default
+- Failure Judge timeout is bounded and configurable (2500 ms by default since v0.8)
 - Context, skill, memory, and compaction gates are enabled by default
 - Compaction skips Jev locally when available tool output cannot meet the savings threshold
 - Savings report includes actual removed characters and operational counters
@@ -134,7 +142,7 @@ Create `~/.pi/agent/jev-control.json`:
   "retryJudge": {
     "enabled": true,
     "maxSameFailureRetries": 2,
-    "timeoutMs": 1200,
+    "timeoutMs": 2500,
     "skipBenignExitCodes": true,
     "appendToResult": true
   },
@@ -167,7 +175,7 @@ Create `~/.pi/agent/jev-control.json`:
   "guiRouter": {
     "enabled": true,
     "confidenceThreshold": 0.70,
-    "timeoutMs": 900,
+    "timeoutMs": 2500,
     "cacheTurns": 3
   },
   "decisionCopilot": {
@@ -175,7 +183,7 @@ Create `~/.pi/agent/jev-control.json`:
     "silent": true,
     "maxCallsPerTurn": 1,
     "maxQuestionsPerCall": 8,
-    "timeoutMs": 3000,
+    "timeoutMs": 5000,
     "confidenceThreshold": 0.72,
     "cacheTurns": 5
   }

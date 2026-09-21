@@ -147,18 +147,35 @@ function discoverSkills(): SkillCandidate[] {
 /**
  * Extract description from SKILL.md frontmatter or first paragraph.
  */
-function extractDescription(content: string): string {
-  // Try frontmatter description
+export function extractDescription(content: string): string {
+  // Parse the small frontmatter subset used by Pi skills. In particular,
+  // support YAML folded/literal descriptions (`description: >` / `|`);
+  // returning the marker itself used to make those skills effectively
+  // invisible to semantic ranking.
   const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (fmMatch) {
-    const descMatch = fmMatch[1].match(/description:\s*(.+)/);
-    if (descMatch) {
-      return descMatch[1].trim().replace(/^["']|["']$/g, "");
+    const lines = fmMatch[1].split(/\r?\n/);
+    const descriptionIndex = lines.findIndex((line) => /^description\s*:/i.test(line));
+    if (descriptionIndex >= 0) {
+      const first = lines[descriptionIndex].replace(/^description\s*:\s*/i, "").trim();
+      if (/^[>|][+-]?$/.test(first)) {
+        const continuation: string[] = [];
+        for (const line of lines.slice(descriptionIndex + 1)) {
+          if (!/^\s+/.test(line) && line.trim()) break;
+          if (line.trim()) continuation.push(line.trim());
+        }
+        if (continuation.length > 0) {
+          return first.startsWith(">") ? continuation.join(" ") : continuation.join("\n");
+        }
+      } else if (first) {
+        return first.replace(/^["']|["']$/g, "");
+      }
     }
   }
 
-  // Fallback: first non-empty paragraph after the title
-  const lines = content.split("\n");
+  // Fallback: first non-empty paragraph after frontmatter and the title.
+  const body = fmMatch ? content.slice(fmMatch[0].length) : content;
+  const lines = body.split("\n");
   const paragraphs: string[] = [];
   let current = "";
   for (const line of lines) {

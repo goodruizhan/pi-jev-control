@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, getConfigPath, saveLanguage } from "../src/config.js";
 import { normalizeLanguage, onOff, tr, trFor } from "../src/i18n.js";
+import { PLUGIN_VERSION } from "../src/version.js";
 import { runtimeState, resetState } from "../src/state/runtime-state.js";
 import { resetStats, formatStats } from "../src/stats/stats.js";
 import { resetSavings, formatSavings } from "../src/stats/savings.js";
@@ -359,7 +360,7 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     : "N/A";
 
   return [
-    `pi-jev-control v0.5.0`,
+    `pi-jev-control v${PLUGIN_VERSION}`,
     trFor(config.language, `Judgment: ${jevStatus} (default: ${config.judgment.backend})`, `判断后端：${jevStatus}（默认：${config.judgment.backend}）`),
     ...backendLines,
     trFor(config.language, `Language: ${config.language}`, `语言：简体中文（zh-CN）`),

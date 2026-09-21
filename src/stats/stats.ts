@@ -114,7 +114,7 @@ export function formatStats(): string {
 
   return tr(
     [
-      `Jev API Usage`,
+      `Judgment Backend Usage`,
       `  Requests: ${jevStats.requests} (failures: ${jevStats.failures})`,
       `  Tokens: ${totalTokens} (in: ${jevStats.inputTokens}, out: ${jevStats.outputTokens})`,
       `  Avg latency: ${avgLatency}ms`,
@@ -131,7 +131,7 @@ export function formatStats(): string {
       `  Backends: ${formatBackendUsage()}`,
     ].join("\n"),
     [
-      `Jev API 使用情况`,
+      `判断后端使用情况`,
       `  请求：${jevStats.requests}（失败：${jevStats.failures}）`,
       `  Token：${totalTokens}（输入：${jevStats.inputTokens}，输出：${jevStats.outputTokens}）`,
       `  平均延迟：${avgLatency} 毫秒`,

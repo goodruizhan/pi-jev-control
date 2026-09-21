@@ -203,9 +203,10 @@ function parseAnswers(text: string, questions: Record<string, JudgeQuestionIR>):
   const answers: JudgeAnswers = {};
   for (const [name, question] of Object.entries(questions)) {
     const raw = parsed.answers[name];
-    if (!raw || typeof raw !== "object") continue;
+    if (!raw || typeof raw !== "object") return null;
     const answer = normalizeAnswer(question, raw);
-    if (answer) answers[name] = answer;
+    if (!answer) return null;
+    answers[name] = answer;
   }
   return answers;
 }

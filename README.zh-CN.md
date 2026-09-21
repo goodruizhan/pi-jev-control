@@ -4,6 +4,14 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v0.8 检索与后端可靠性
+
+- **自然语言代码检索** — `jev_search_code` 将请求拆成有界的字面量术语，先做本地词法排序再交给判断后端，避免把整句当正则导致零候选
+- **技能描述解析** — 正确读取 `description: >` / `description: |` 的多行 YAML frontmatter，不再把描述误读成 `>` 或 `|`
+- **答案契约验证** — 缺失、越界或不属于候选项的后端答案会失败并进入安全回退，不再让模块消费不完整结果
+- **Embedding 防御** — 拒绝空向量、非有限值和维度不一致的响应；无效 temperature 回退到安全默认值
+- **运行诊断** — `/jev status` 显示真实版本，统计标题改为中立的判断后端用量；默认短超时放宽以覆盖冷连接
+
 ## v0.7 Embedding 后端与后端评测
 
 - **Embedding 后端** — 任何 OpenAI 兼容 embeddings 端点即可做零样本判断（余弦相似度 + softmax；候选文本的向量缓存在内存中）
@@ -38,7 +46,7 @@
 - 相同操作/失败类别重复出现时，本地直接建议 `do_not_retry`
 - 同类失败累计两次后才熔断；历史失败默认提醒而非硬拦截
 - 明确标注失败评估来自插件，并非工具输出；设 `retryJudge.appendToResult: false` 可保留失败记忆与重试判断、但不再改动工具输出
-- 失败判断默认超时缩短至 1200 毫秒
+- 失败判断超时有界且可配置（v0.8 起默认 2500 毫秒）
 - 上下文、技能、记忆和压缩门控改为默认开启
 - 工具输出不足以达到节省阈值时，压缩功能在本地跳过 Jev
 - 节省报告新增实际移除字符数和运行计数
@@ -73,7 +81,7 @@
 - **记忆门控** — 分析用户输入，检测约束、决策和失败
 - **记忆存储** — 使用本地 JSONL 持久化（`~/.pi/agent/jev-control-data/`）
 - **记忆搜索**（`jev_memory_search`）— 本地过滤并使用 Jev 进行相关性排序
-- **统计信息** — 跟踪所有模块的 Jev API 使用情况
+- **统计信息** — 跟踪所有模块和判断后端的使用情况
 - **项目级配置覆盖** — `.pi/jev-control.json` 覆盖全局配置
 
 ## v0.1 功能
@@ -134,7 +142,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
   "retryJudge": {
     "enabled": true,
     "maxSameFailureRetries": 2,
-    "timeoutMs": 1200,
+    "timeoutMs": 2500,
     "skipBenignExitCodes": true,
     "appendToResult": true
   },
@@ -167,7 +175,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
   "guiRouter": {
     "enabled": true,
     "confidenceThreshold": 0.70,
-    "timeoutMs": 900,
+    "timeoutMs": 2500,
     "cacheTurns": 3
   },
   "decisionCopilot": {
@@ -175,7 +183,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "silent": true,
     "maxCallsPerTurn": 1,
     "maxQuestionsPerCall": 8,
-    "timeoutMs": 3000,
+    "timeoutMs": 5000,
     "confidenceThreshold": 0.72,
     "cacheTurns": 5
   }

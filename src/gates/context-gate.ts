@@ -63,6 +63,50 @@ const UE5_INCLUDES = [
   "**/*.sh",
 ];
 
+const SEARCH_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "code", "file", "files", "find", "for", "from",
+  "how", "in", "is", "of", "on", "or", "that", "the", "this", "to", "where", "with",
+]);
+
+/**
+ * Turn a natural-language search request into bounded literal ripgrep terms.
+ * Context Gate used to pass the entire request as one regex, so a query such
+ * as "version status backend timeout" only matched that exact phrase and
+ * usually returned no candidates. Literal terms also prevent invalid/user-
+ * supplied regexes from breaking candidate generation.
+ */
+export function buildSearchTerms(query: string): string[] {
+  const bounded = query.trim().slice(0, 500);
+  if (!bounded) return [];
+
+  const rawTokens = bounded.match(/[\p{L}\p{N}_.$:/\\-]+/gu) ?? [];
+  const terms: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: string): void => {
+    const term = value.trim();
+    const key = term.toLocaleLowerCase();
+    if (term.length < 2 || SEARCH_STOP_WORDS.has(key) || seen.has(key)) return;
+    seen.add(key);
+    terms.push(term);
+  };
+
+  for (const token of rawTokens) {
+    add(token);
+    // Unspaced CJK requests need a small recall fallback. The full token stays
+    // first; bounded bigrams let comments/identifiers containing part of the
+    // request seed candidates for the judgment reranker.
+    if (/^[\p{Script=Han}]+$/u.test(token) && token.length > 4) {
+      for (let i = 0; i < token.length - 1 && terms.length < 8; i += 2) {
+        add(token.slice(i, i + 2));
+      }
+    }
+    if (terms.length >= 8) break;
+  }
+
+  if (terms.length === 0) add(bounded);
+  return terms.slice(0, 8);
+}
+
 /**
  * Setup the Context Gate — registers the jev_search_code tool.
  */
@@ -172,11 +216,16 @@ async function searchWithRg(
   const safeRoots = roots.map((root) => resolveProjectRoot(projectRoot, root));
   const includePatterns = patterns.length > 0 ? patterns : UE5_INCLUDES;
 
+  const searchTerms = buildSearchTerms(query);
+  if (searchTerms.length === 0) return [];
+
   const args = [
     "--json",
     "--line-number",
     "--max-count", "2",
     "--max-filesize", "2M",
+    "--fixed-strings",
+    "--ignore-case",
   ];
 
   for (const excluded of RG_EXCLUDES) {
@@ -186,13 +235,18 @@ async function searchWithRg(
     args.push("--glob", pattern);
   }
 
+  for (const term of searchTerms) {
+    args.push("--regexp", term);
+  }
+
   const relativeRoots = safeRoots.map((root) => {
     const relative = path.relative(projectRoot, root);
     return relative.length === 0 ? "." : relative;
   });
-  args.push("--", query, ...relativeRoots);
+  args.push("--", ...relativeRoots);
 
   const output = await runRipgrep(args, projectRoot, signal);
+  const rawLimit = Math.min(400, Math.max(maxCandidates, maxCandidates * 4));
   for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) continue;
     let event: any;
@@ -218,10 +272,28 @@ async function searchWithRg(
       relevance: null,
     });
 
-    if (results.length >= maxCandidates) break;
+    if (results.length >= rawLimit) break;
   }
 
-  return results;
+  return results
+    .map((result, index) => ({ result, index, score: lexicalCandidateScore(result, query, searchTerms) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, maxCandidates)
+    .map(({ result }) => result);
+}
+
+function lexicalCandidateScore(candidate: SearchResult, query: string, terms: string[]): number {
+  const pathText = candidate.path.toLocaleLowerCase();
+  const previewText = candidate.preview.toLocaleLowerCase();
+  const exact = query.trim().toLocaleLowerCase();
+  let score = exact && (pathText.includes(exact) || previewText.includes(exact)) ? 20 : 0;
+  for (const term of terms) {
+    const lower = term.toLocaleLowerCase();
+    const weight = Math.min(4, Math.max(1, lower.length / 4));
+    if (pathText.includes(lower)) score += 4 * weight;
+    if (previewText.includes(lower)) score += weight;
+  }
+  return score;
 }
 
 function resolveProjectRoot(projectRoot: string, requestedRoot: string): string {

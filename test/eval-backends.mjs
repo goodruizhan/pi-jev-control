@@ -15,8 +15,8 @@
  * Usage:
  *   node test/eval-backends.mjs [--dataset path] [--backends a,b] [--reference name] [--timeoutMs N]
  *
- * Defaults: dataset=test/eval/cases.jsonl, backends=<all configured except the
- * reference>, reference=<configured judgment.backend>.
+ * Defaults: dataset=test/eval/cases.jsonl, backends=<reference plus every
+ * configured non-binary model backend>, reference=<configured judgment.backend>.
  */
 
 import * as fs from "node:fs";
@@ -54,7 +54,13 @@ if (!reference) {
 
 const candidateNames = args.backends
   ? args.backends.split(",").map((name) => name.trim()).filter(Boolean)
-  : Object.keys(config.judgment.backends).filter((name) => name !== referenceName);
+  : [
+      referenceName,
+      ...Object.keys(config.judgment.backends).filter((name) => {
+        if (name === referenceName) return false;
+        return getBackendByName(name)?.confidenceKind !== "binary";
+      }),
+    ];
 
 const candidates = candidateNames.map((name) => ({ name, backend: getBackendByName(name) }));
 

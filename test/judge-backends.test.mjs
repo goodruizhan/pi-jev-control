@@ -128,7 +128,7 @@ test("openai-compatible backend normalizes a well-formed response", async () => 
   }
 });
 
-test("openai-compatible backend discounts unmatched choices and skips missing answers", async () => {
+test("openai-compatible backend rejects incomplete answer sets", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = mockFetch({
     choices: [{ message: { content: '{"answers": {"tier": {"choice": "bogus", "confidence": 0.8}}}' } }],
@@ -139,12 +139,9 @@ test("openai-compatible backend discounts unmatched choices and skips missing an
       { state: { task: "x" }, questions: { tier: choice("Pick", { cheap: null, strong: null }), missing: noul("?") } },
       {},
     );
-    assert.equal(outcome.ok, true);
-    const tier = outcome.answers.tier;
-    assert.equal(tier.type, "choice");
-    assert.equal(tier.choice, "bogus");
-    assert.ok(tier.confidence <= 0.3, `unmatched choice should be discounted, got ${tier.confidence}`);
-    assert.equal(outcome.answers.missing, undefined);
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.errorType, "unknown");
+    assert.match(outcome.error, /unparseable model output/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -275,6 +272,19 @@ test("embedding backend caches candidate embeddings across calls", async () => {
     // First call embeds query + 2 candidates; second call only the fresh query
     assert.equal(calls[0].input.length, 3);
     assert.equal(calls[1].input.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("embedding backend rejects invalid vector payloads", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = mockEmbeddingFetch((text) => (text === "no" ? [0] : [1, Number.NaN]));
+    const backend = new EmbeddingBackend({ name: "emb", model: "m", temperature: 0 });
+    const outcome = await backend.judge({ state: {}, questions: { q: noul("?") } }, {});
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.error, /invalid embedding vectors/);
   } finally {
     globalThis.fetch = originalFetch;
   }
