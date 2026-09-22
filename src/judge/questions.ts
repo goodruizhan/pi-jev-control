@@ -69,6 +69,34 @@ export const TOOL_GATE_QUESTION = choice(
   },
 );
 
+// ── Task complexity (model-asked) ───────────────────────────────────────
+
+export const TASK_COMPLEXITY_QUESTION = choice(
+  "Choose how complex this task really is: cheap (bounded read/search or one mechanical edit, no build), medium (normal implementation or debugging across a few files, assets, or a build/test cycle), or strong (architecture or cross-module change, engine internals, replication/GC/threads, crash root cause, or a high-impact refactor).",
+  {
+    cheap: null,
+    medium: null,
+    strong: null,
+  },
+);
+
+// ── Operation risk (model-asked) ────────────────────────────────────────
+
+export const OPERATION_RISK_QUESTION = choice(
+  "Rate the risk of performing this operation: low (read-only, easily reversible, or confined to one throwaway file), moderate (writes or modifies existing files, regenerates assets, or touches more than a few files but is reversible through git), or high (deletes or bulk-overwrites data, changes repo state irreversibly, publishes or ships something, touches credentials or production, or has unclear scope).",
+  {
+    low: null,
+    moderate: null,
+    high: null,
+  },
+);
+
+// ── Ranking relevance (rank primitive) ──────────────────────────────────
+
+export const RANK_RELEVANCE_QUESTION = noul(
+  "Is this candidate relevant to answering the query in state.query?",
+);
+
 // ── Failure Classifier + Retry Judge (combined) ────────────────────────
 
 export const FAILURE_TYPE_QUESTION = choice(

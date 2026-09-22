@@ -93,12 +93,24 @@ export async function analyzeUserInput(
   // Write condition: memory_type != none AND durable probability >= 0.65
   if (memoryType === "none" || durableProb < 0.65) return;
 
+  const summary = trimmed.slice(0, 200);
+
+  // suggest (default): announce, never write. The model decides what to remember
+  // through jev_memory_add — it has the conversation this watcher does not.
+  if (config.memoryGate.mode === "suggest") {
+    notifyAutomatic(ctx, tr(
+      `[Jev memory] Detected a possible ${memoryType} (durability ${durableProb.toFixed(2)}): "${summary}" — call jev_memory_add if it should be stored.`,
+      `[Jev 记忆] 检测到一条可能的 ${memoryType}（持久度 ${durableProb.toFixed(2)}）：“${summary}”——如果值得保存请调用 jev_memory_add。`,
+    ), "info");
+    return;
+  }
+
   const record: MemoryRecord = {
     id: crypto.randomUUID(),
     timestamp: Date.now(),
     projectHash: getProjectHash(),
     type: memoryType,
-    summary: trimmed.slice(0, 200),
+    summary,
     rawExcerpt: trimmed.slice(0, 500),
     confidence: durableProb,
     source: "user",

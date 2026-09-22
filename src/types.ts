@@ -241,6 +241,13 @@ export interface JevControlConfig {
   };
   memoryGate: {
     enabled: boolean;
+    /**
+     * What the automatic watcher is allowed to do.
+     * - "suggest" (default) — announce a possible memory and stop. Nothing is
+     *   written; the model records it itself through `jev_memory_add`.
+     * - "auto" — legacy: write to the store on the model's behalf.
+     */
+    mode: "suggest" | "auto";
   };
   compaction: {
     enabled: boolean;

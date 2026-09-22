@@ -53,7 +53,11 @@ function createToolGateHarness() {
   return handlers.get("tool_call");
 }
 
-test("enforce mode fails closed when Jev is unavailable", async () => {
+test("deterministic floor: uncertain commands pass, dangerous ones still confirm", async () => {
+  // The architecture inversion: there is no Jev in the blocking path anymore, so
+  // "Jev unavailable" no longer fails closed. What still fails closed is the
+  // deterministic shell classification, because the safety floor must not depend
+  // on a model being reachable.
   const originalKey = process.env.TYPESAFE_API_KEY;
   delete process.env.TYPESAFE_API_KEY;
   resetClient();
@@ -64,17 +68,58 @@ test("enforce mode fails closed when Jev is unavailable", async () => {
   config.toolGate.enabled = true;
   config.toolGate.mode = "enforce";
   config.memoryGate.enabled = false;
+  config.retryJudge.enabled = false;
   let confirmations = 0;
-  const ctx = { signal: undefined, ui: { confirm: async () => { confirmations += 1; return false; } } };
+  const ctx = {
+    signal: undefined,
+    ui: {
+      confirm: async () => { confirmations += 1; return false; },
+      notify() {},
+    },
+  };
 
-  const unknown = await handler({ toolName: "bash", input: { command: "npm install left-pad" } }, ctx);
-  assert.equal(unknown?.block, true);
+  // Uncertain, non-dangerous: the model decides, no confirmation, no block.
+  const uncertain = await handler({ toolName: "bash", input: { command: "npm install left-pad" } }, ctx);
+  assert.equal(uncertain, undefined);
+  assert.equal(confirmations, 0);
+
+  // Ordinary write: never confirmed, never judged.
   const write = await handler({ toolName: "write", input: { path: "x", content: "y" } }, ctx);
-  assert.equal(write?.block, true);
-  assert.equal(confirmations, 2);
+  assert.equal(write, undefined);
+  assert.equal(confirmations, 0);
+
+  // Dangerous shell pattern: confirmed, and a refusal blocks.
+  const dangerous = await handler({ toolName: "bash", input: { command: "rm -rf ./victim" } }, ctx);
+  assert.equal(dangerous?.block, true);
+  assert.equal(confirmations, 1);
 
   if (originalKey === undefined) delete process.env.TYPESAFE_API_KEY;
-  else process.env.TYPESAFE_API_KEY = originalKey;
+  else process.env.TYPESSAFE_API_KEY = originalKey;
+  resetClient();
+});
+
+test("safe shell classification is independent of judgment backend availability", async () => {
+  // A deterministic "safe" verdict is not relaxed when Jev is down — the rules
+  // backend is the floor, not a suggestion.
+  const originalKey = process.env.TYPESSAFE_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
+  resetClient();
+
+  const handler = createToolGateHarness();
+  const config = loadConfig();
+  config.enabled = true;
+  config.toolGate.enabled = true;
+  config.toolGate.mode = "enforce";
+  config.retryJudge.enabled = false;
+  const ctx = { signal: undefined, ui: { confirm: async () => false, notify() {} } };
+
+  for (const command of ["git status --short", "ls -la", "pwd"]) {
+    const result = await handler({ toolName: "bash", input: { command } }, ctx);
+    assert.equal(result, undefined);
+  }
+
+  if (originalKey === undefined) delete process.env.TYPESAFE_API_KEY;
+  else process.env.TYPESSAFE_API_KEY = originalKey;
   resetClient();
 });
 

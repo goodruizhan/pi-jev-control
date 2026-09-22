@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { loadConfig } from "../dist/src/config.js";
+import { loadConfig, resetConfigToDefaults } from "../dist/src/config.js";
 import { modelCandidates, routeModel } from "../dist/src/router/model-router.js";
 
 function makeContext(models, currentModel) {
@@ -25,14 +25,17 @@ test("modelCandidates keeps legacy single targets and ordered target lists compa
 });
 
 test("model router tries same-tier candidates in order and applies selected thinking", async () => {
+  resetConfigToDefaults();
   const config = loadConfig();
   const previousMode = config.router.mode;
+  const previousEnabled = config.router.enabled;
   const previousStrong = config.router.models.strong;
   let thinking = "low";
   const setModelCalls = [];
   const thinkingCalls = [];
 
   config.router.mode = "set-model";
+  config.router.enabled = true;
   config.router.models.strong = [
     { provider: "sensenova", model: "kimi-k3", thinking: "high" },
     { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
@@ -65,18 +68,22 @@ test("model router tries same-tier candidates in order and applies selected thin
     assert.deepEqual(thinkingCalls, ["high"]);
   } finally {
     config.router.mode = previousMode;
+    config.router.enabled = previousEnabled;
     config.router.models.strong = previousStrong;
   }
 });
 
 test("model router reapplies per-tier thinking when the model is already active", async () => {
+  resetConfigToDefaults();
   const config = loadConfig();
   const previousMode = config.router.mode;
+  const previousEnabled = config.router.enabled;
   const previousMedium = config.router.models.medium;
   let thinking = "high";
   let setModelCalled = false;
 
   config.router.mode = "set-model";
+  config.router.enabled = true;
   config.router.models.medium = {
     provider: "openai-codex",
     model: "gpt-5.6-sol",
@@ -103,6 +110,7 @@ test("model router reapplies per-tier thinking when the model is already active"
     assert.equal(thinking, "medium");
   } finally {
     config.router.mode = previousMode;
+    config.router.enabled = previousEnabled;
     config.router.models.medium = previousMedium;
   }
 });

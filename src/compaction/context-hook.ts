@@ -7,6 +7,7 @@ import {
   consumeSkipNextGeneration,
   getCurrentTurn,
   getEpochPlan,
+  hasPendingGeneration,
   setEpochPlan,
   shouldGeneratePlan,
   touchEpoch,
@@ -63,16 +64,23 @@ export function setupContextHook(pi: ExtensionAPI): void {
     recordContextEvent();
     if (consumeSkipNextGeneration()) return;
 
-    // Non-auto modes: only apply a plan that someone explicitly requested. The hook
-    // never decides on its own, because it would be deleting the model's memory.
+    // Non-auto modes: the hook never decides. It applies a plan that someone else
+    // asked for, or passes the messages through untouched.
     if (config.compaction.autoMode !== "auto") {
       const pendingPlan = getEpochPlan();
-      if (!pendingPlan) {
-        if (config.compaction.autoMode === "suggest") maybeSuggestPruning(ctx, messages);
-        return;
+      if (pendingPlan) {
+        touchEpoch();
+        return applyPlanIfUseful(messages, pendingPlan);
       }
-      touchEpoch();
-      return applyPlanIfUseful(messages, pendingPlan);
+
+      // An explicit request is pending (jev_prune_context or /jev compact plan).
+      // That is the one case where the hook may generate a plan in a non-auto mode.
+      if (hasPendingGeneration()) {
+        return generateAndApplyPlan(messages, ctx.signal);
+      }
+
+      if (config.compaction.autoMode === "suggest") maybeSuggestPruning(ctx, messages);
+      return;
     }
 
     const existingPlan = getEpochPlan();
@@ -84,30 +92,7 @@ export function setupContextHook(pi: ExtensionAPI): void {
     }
 
     if (needsPlan) {
-      // Avoid a network round trip when the entire tool-result budget is too small
-      // to satisfy the configured minimum savings threshold.
-      const candidateChars = buildToolGroups(messages).groups.reduce((sum, group) => sum + group.charsBefore, 0);
-      if (candidateChars < config.compaction.minCharsToSave) {
-        recordPruningPlanSkipped();
-        return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
-      }
-      try {
-        const plan = await buildPruningPlan(messages, ctx.signal);
-        recordPruningPlanGenerated();
-        const gateResult = checkCacheGate(plan);
-
-        if (!gateResult.shouldPrune) {
-          recordPruningPlanSkipped();
-          // Keep a still-valid older plan if the replacement has too little benefit.
-          return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
-        }
-
-        setEpochPlan(plan);
-        return applyPlanIfUseful(messages, plan);
-      } catch (e) {
-        console.warn("[pi-jev-control] Context pruning failed:", e instanceof Error ? e.message : String(e));
-        return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
-      }
+      return generateAndApplyPlan(messages, ctx.signal, existingPlan);
     }
 
     // Default: pass through unchanged
@@ -133,6 +118,47 @@ function applyPlanIfUseful(messages: PiMessage[], plan: PruningPlan): { messages
   recordCharsTruncated(truncated);
   recordTokensSaved(saved);
   return { messages: filtered };
+}
+
+/**
+ * Build a pruning plan and apply it.
+ *
+ * Shared by the automatic path and by an explicit request (jev_prune_context or
+ * /jev compact plan). setEpochPlan() clears forceRegeneration, so an explicit
+ * request produces exactly one plan and then stops.
+ */
+async function generateAndApplyPlan(
+  messages: PiMessage[],
+  signal: AbortSignal | undefined,
+  existingPlan?: PruningPlan | null,
+): Promise<{ messages: PiMessage[] } | undefined> {
+  const config = loadConfig();
+
+  // Avoid a network round trip when the entire tool-result budget is too small
+  // to satisfy the configured minimum savings threshold.
+  const candidateChars = buildToolGroups(messages).groups.reduce((sum, group) => sum + group.charsBefore, 0);
+  if (candidateChars < config.compaction.minCharsToSave) {
+    recordPruningPlanSkipped();
+    return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
+  }
+
+  try {
+    const plan = await buildPruningPlan(messages, signal);
+    recordPruningPlanGenerated();
+    const gateResult = checkCacheGate(plan);
+
+    if (!gateResult.shouldPrune) {
+      recordPruningPlanSkipped();
+      // Keep a still-valid older plan if the replacement has too little benefit.
+      return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
+    }
+
+    setEpochPlan(plan);
+    return applyPlanIfUseful(messages, plan);
+  } catch (e) {
+    console.warn("[pi-jev-control] Context pruning failed:", e instanceof Error ? e.message : String(e));
+    return existingPlan ? applyPlanIfUseful(messages, existingPlan) : undefined;
+  }
 }
 
 /**

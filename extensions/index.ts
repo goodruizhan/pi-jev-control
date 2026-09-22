@@ -25,6 +25,15 @@ import { clearEpochPlan, requestEpochPlan, resetEpoch, getEpochInfo } from "../s
 import { setupReviewGate } from "../src/review/review-gate.js";
 import { setupGUIActionRouter } from "../src/gui/action-router.js";
 import { resetDecisionCopilot, setupDecisionCopilot } from "../src/decision/batch.js";
+// Model-initiated inquiry tools (architecture inversion: the model asks Jev,
+// Jev never decides on the model's behalf)
+import { setupAssessTaskTool } from "../src/router/assess-task.js";
+import { setupModelTierTool } from "../src/router/model-tier.js";
+import { setupAssessRiskTool } from "../src/gates/assess-risk.js";
+import { setupDiagnoseFailureTool } from "../src/judgment/diagnose-failure.js";
+import { setupPruneContextTool } from "../src/compaction/prune-context.js";
+import { setupMemoryAddTool } from "../src/memory/memory-add.js";
+import { setupRankTool } from "../src/judge/rank.js";
 
 
 /**
@@ -103,6 +112,29 @@ export default function (pi: ExtensionAPI) {
   // Silent, bounded multi-question decision copilot
   setupDecisionCopilot(pi);
 
+  // ── Model-initiated inquiry tools ─────────────────────────────────
+
+  // Task complexity, asked by the model instead of being inferred on its behalf.
+  setupAssessTaskTool(pi);
+
+  // The model switches its own tier; nothing does it automatically anymore.
+  setupModelTierTool(pi);
+
+  // Second opinion on an operation before running it.
+  setupAssessRiskTool(pi);
+
+  // Failure diagnosis pulled on demand.
+  setupDiagnoseFailureTool(pi);
+
+  // Context pruning requested by the model.
+  setupPruneContextTool(pi);
+
+  // Memory captured by explicit request.
+  setupMemoryAddTool(pi);
+
+  // Generic candidate ranking primitive.
+  setupRankTool(pi);
+
   // ── Register /jev command ───────────────────────────────────────
 
   pi.registerCommand("jev", {
@@ -167,6 +199,23 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      // /jev router mode <rules-only|advisory|set-model|off>
+      if (arg.startsWith("router mode ")) {
+        const mode = arg.slice("router mode ".length).trim();
+        const modes = ["rules-only", "advisory", "set-model", "off"];
+        if (!modes.includes(mode)) {
+          ctx.ui.notify(tr(
+            `Usage: /jev router mode ${modes.join("|")}`,
+            `用法：/jev router mode ${modes.join("|")}`,
+          ), "warning");
+          return;
+        }
+        config.router.mode = mode as "rules-only" | "advisory" | "set-model" | "off";
+        ctx.ui.notify(tr(`Router mode: ${mode}`, `路由模式：${mode}`), "info");
+        ctx.ui.notify(tr("Note: Use /reload for persistent changes.", "注意：如需持久化，请修改配置后使用 /reload。"), "info");
+        return;
+      }
+
       // /jev router on|off — toggle Task Router
       if (arg.startsWith("router ")) {
         const action = arg.split(" ")[1];
@@ -186,6 +235,22 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         toggleModule(action, "toolGate", config, ctx);
+        return;
+      }
+
+      // /jev retry append on|off — whether assessments are appended to tool results
+      if (arg.startsWith("retry append ")) {
+        const action = arg.slice("retry append ".length).trim();
+        if (action !== "on" && action !== "off") {
+          ctx.ui.notify(tr("Usage: /jev retry append on|off", "用法：/jev retry append on|off"), "warning");
+          return;
+        }
+        config.retryJudge.appendToResult = action === "on";
+        ctx.ui.notify(tr(
+          `Retry Judge appends assessments to tool results: ${action.toUpperCase()}`,
+          `重试判断向工具结果追加评估：${action === "on" ? "开启" : "关闭"}`,
+        ), "info");
+        ctx.ui.notify(tr("Note: Use /reload for persistent changes.", "注意：如需持久化，请修改配置后使用 /reload。"), "info");
         return;
       }
 
@@ -260,6 +325,22 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      // /jev memory mode <suggest|auto>
+      if (arg.startsWith("memory mode ")) {
+        const mode = arg.slice("memory mode ".length).trim();
+        if (mode !== "suggest" && mode !== "auto") {
+          ctx.ui.notify(tr("Usage: /jev memory mode suggest|auto", "用法：/jev memory mode suggest|auto"), "warning");
+          return;
+        }
+        config.memoryGate.mode = mode;
+        ctx.ui.notify(tr(
+          `Memory Gate mode: ${mode}`,
+          `记忆门控模式：${mode === "suggest" ? "建议（只通知不写入）" : "自动（自动写入）"}`,
+        ), "info");
+        ctx.ui.notify(tr("Note: Use /reload for persistent changes.", "注意：如需持久化，请修改配置后使用 /reload。"), "info");
+        return;
+      }
+
       // /jev memory on|off — toggle Memory Gate (after exact memory commands)
       if (arg.startsWith("memory ")) {
         const action = arg.split(" ")[1];
@@ -316,6 +397,27 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      // /jev compaction mode <off|suggest|auto>
+      // NB: must be checked before the "compact " branch below.
+      if (arg.startsWith("compaction mode ")) {
+        const mode = arg.slice("compaction mode ".length).trim();
+        const modes = ["off", "suggest", "auto"];
+        if (!modes.includes(mode)) {
+          ctx.ui.notify(tr(
+            `Usage: /jev compaction mode ${modes.join("|")}`,
+            `用法：/jev compaction mode ${modes.join("|")}`,
+          ), "warning");
+          return;
+        }
+        config.compaction.autoMode = mode as "off" | "suggest" | "auto";
+        ctx.ui.notify(tr(
+          `Compaction autoMode: ${mode}`,
+          `上下文压缩自动模式：${mode === "off" ? "关闭（仅模型或用户请求才裁剪）" : mode === "suggest" ? "建议（只提示不裁剪）" : "自动（历史行为）"}`,
+        ), "info");
+        ctx.ui.notify(tr("Note: Use /reload for persistent changes.", "注意：如需持久化，请修改配置后使用 /reload。"), "info");
+        return;
+      }
+
       // /jev compact on|off — toggle compaction
       if (arg.startsWith("compact ")) {
         const action = arg.split(" ")[1];
@@ -340,8 +442,8 @@ export default function (pi: ExtensionAPI) {
       // Unknown subcommand
       ctx.ui.notify(
         tr(
-          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, route cheap|medium|strong, language en|zh-CN, toolgate advisory|enforce|on|off, router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, compact on|off|status|plan|clear, reset`,
-          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、route cheap|medium|strong、language en|zh-CN、toolgate advisory|enforce|on|off、router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、compact on|off|status|plan|clear、reset`,
+          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, route cheap|medium|strong, language en|zh-CN, toolgate advisory|enforce|on|off, router on|off, router mode rules-only|advisory|set-model|off, retry on|off, retry append on|off, contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, memory mode suggest|auto, compact on|off|status|plan|clear, compaction mode off|suggest|auto, reset`,
+          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、route cheap|medium|strong、language en|zh-CN、toolgate advisory|enforce|on|off、router on|off、router mode rules-only|advisory|set-model|off、retry on|off、retry append on|off、contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、memory mode suggest|auto、compact on|off|status|plan|clear、compaction mode off|suggest|auto、reset`,
         ),
         "info",
       );
@@ -379,12 +481,12 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     trFor(config.language, `Timeout: ${config.jev.timeoutMs}ms`, `超时：${config.jev.timeoutMs} 毫秒`),
     trFor(config.language, `Router: ${onOff(config.router.enabled, config.language)} (mode: ${config.router.mode})`, `任务路由：${onOff(config.router.enabled, config.language)}（模式：${config.router.mode}）`),
     trFor(config.language, `Tool Gate: ${onOff(config.toolGate.enabled, config.language)} (mode: ${config.toolGate.mode})`, `工具门控：${onOff(config.toolGate.enabled, config.language)}（模式：${config.toolGate.mode === "advisory" ? "辅助" : "严格"}）`),
-    trFor(config.language, `Retry Judge: ${onOff(config.retryJudge.enabled, config.language)}`, `重试判断：${onOff(config.retryJudge.enabled, config.language)}`),
+    trFor(config.language, `Retry Judge: ${onOff(config.retryJudge.enabled, config.language)} (appendToResult: ${config.retryJudge.appendToResult ? "on" : "off"})`, `重试判断：${onOff(config.retryJudge.enabled, config.language)}（追加结果：${config.retryJudge.appendToResult ? "开启" : "关闭"}）`),
     trFor(config.language, `Context Gate: ${onOff(config.contextGate.enabled, config.language)}`, `上下文门控：${onOff(config.contextGate.enabled, config.language)}`),
     trFor(config.language, `Skill Gate: ${onOff(config.skillGate.enabled, config.language)}`, `技能门控：${onOff(config.skillGate.enabled, config.language)}`),
     trFor(config.language, `Agent Router: ${onOff(config.agentRouter.enabled, config.language)}`, `代理路由：${onOff(config.agentRouter.enabled, config.language)}`),
-    trFor(config.language, `Memory Gate: ${onOff(config.memoryGate.enabled, config.language)}`, `记忆门控：${onOff(config.memoryGate.enabled, config.language)}`),
-    trFor(config.language, `Compaction: ${onOff(config.compaction.enabled, config.language)} (epoch: ${epochStatus})`, `上下文压缩：${onOff(config.compaction.enabled, config.language)}（周期：${epochStatus}）`),
+    trFor(config.language, `Memory Gate: ${onOff(config.memoryGate.enabled, config.language)} (mode: ${config.memoryGate.mode})`, `记忆门控：${onOff(config.memoryGate.enabled, config.language)}（模式：${config.memoryGate.mode}）`),
+    trFor(config.language, `Compaction: ${onOff(config.compaction.enabled, config.language)} (autoMode: ${config.compaction.autoMode}, epoch: ${epochStatus})`, `上下文压缩：${onOff(config.compaction.enabled, config.language)}（自动模式：${config.compaction.autoMode}，周期：${epochStatus}）`),
     trFor(config.language, `Review Gate: ${onOff(config.reviewGate.enabled, config.language)}`, `审查门控：${onOff(config.reviewGate.enabled, config.language)}`),
     trFor(config.language, `GUI Router: ${onOff(config.guiRouter.enabled, config.language)}`, `GUI 路由：${onOff(config.guiRouter.enabled, config.language)}`),
     trFor(config.language, `Decision Copilot: ${onOff(config.decisionCopilot.enabled, config.language)} (max ${config.decisionCopilot.maxCallsPerTurn}/turn)`, `决策副驾驶：${onOff(config.decisionCopilot.enabled, config.language)}（每轮最多 ${config.decisionCopilot.maxCallsPerTurn} 次）`),
@@ -505,9 +607,12 @@ function registerMemorySearchTool(pi: ExtensionAPI): void {
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const config = loadConfig();
-      if (!config.enabled || !config.memoryGate.enabled) {
+      // Searching memory is a read-only model-initiated action, so it is gated
+      // only on the top-level switch — not on the automatic memory watcher, which
+      // defaults to off in the inverted architecture.
+      if (!config.enabled) {
         return {
-          content: [{ type: "text", text: tr("Jev Memory Gate is disabled.", "Jev 记忆门控已关闭。") }],
+          content: [{ type: "text", text: tr("Jev control is disabled.", "Jev 控制层已关闭。") }],
           details: {},
         };
       }

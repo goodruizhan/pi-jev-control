@@ -89,9 +89,12 @@ test("appendToResult=false keeps failure records but leaves tool output untouche
   resetState();
 });
 
-test("approved writes are reused within a task and blocked results include retry guidance", async () => {
-  const originalKey = process.env.TYPESAFE_API_KEY;
-  delete process.env.TYPESAFE_API_KEY;
+test("ordinary writes are never confirmed; the approval cache still scopes to a task", async () => {
+  // Writes no longer pass through Jev, so there is nothing to confirm. The
+  // approval cache still clears at the task boundary — that is the observable
+  // part of the old behavior that survives the inversion.
+  const originalKey = process.env.TYPESSAFE_API_KEY;
+  delete process.env.TYPESSAFE_API_KEY;
   resetClient();
   resetState();
 
@@ -105,25 +108,78 @@ test("approved writes are reused within a task and blocked results include retry
   config.toolGate.mode = "enforce";
   config.toolGate.reuseApprovedWrites = true;
   config.memoryGate.enabled = false;
+  config.retryJudge.enabled = false;
 
   let confirmations = 0;
-  const allowContext = { ui: { confirm: async () => { confirmations += 1; return true; } } };
-  await handler({ toolName: "write", input: { path: "same.md", content: "one" } }, allowContext);
-  await handler({ toolName: "write", input: { path: "same.md", content: "two" } }, allowContext);
-  assert.equal(confirmations, 1);
+  const ctx = { ui: { confirm: async () => { confirmations += 1; return true; } } };
 
+  const first = await handler({ toolName: "write", input: { path: "same.md", content: "one" } }, ctx);
+  const second = await handler({ toolName: "write", input: { path: "same.md", content: "two" } }, ctx);
+  assert.equal(first, undefined);
+  assert.equal(second, undefined);
+  assert.equal(confirmations, 0);
+
+  // Nothing is blocked any more just because a write repeats.
   await inputHandler({ source: "user", text: "new task" });
-  await handler({ toolName: "write", input: { path: "same.md", content: "three" } }, allowContext);
-  assert.equal(confirmations, 2);
+  const third = await handler({ toolName: "write", input: { path: "same.md", content: "three" } }, ctx);
+  assert.equal(third, undefined);
+  assert.equal(confirmations, 0);
 
-  const denyContext = { ui: { confirm: async () => false } };
-  const blocked = await handler({ toolName: "write", input: { path: "other.md", content: "x" } }, denyContext);
+  // A dangerous command is still confirmed, and a refusal blocks.
+  const dangerous = await handler({ toolName: "bash", input: { command: "rm -rf ./victim" } }, {
+    ui: { confirm: async () => false },
+  });
+  assert.equal(dangerous?.block, true);
+  assert.equal(confirmations, 0);
+
+  if (originalKey === undefined) delete process.env.TYPESSAFE_API_KEY;
+  else process.env.TYPESSAFE_API_KEY = originalKey;
+  resetClient();
+  resetState();
+});
+
+test("repeated failures block and the block reason carries retry guidance", async () => {
+  // blockReason() with uncertainField + retryHint now comes from the
+  // deterministic repeated-failure circuit breaker, not from a Jev verdict.
+  resetState();
+  const handlers = new Map();
+  setupToolGate({ on: (event, handler) => handlers.set(event, handler) });
+  const handler = handlers.get("tool_call");
+
+  const input = { command: "npm test" };
+  const actionKey = getActionKey("bash", input);
+  const config = loadConfig();
+  config.language = "en";
+  config.enabled = true;
+  config.toolGate.enabled = true;
+  config.toolGate.mode = "enforce";
+  config.retryJudge.enabled = true;
+  config.retryJudge.maxSameFailureRetries = 2;
+  config.memoryGate.enabled = false;
+
+  for (let i = 0; i < 2; i += 1) {
+    recordFailure({
+      signature: `seed-${i}`,
+      actionKey,
+      commandCategory: getCommandCategory("bash", input),
+      toolName: "bash",
+      inputSummary: JSON.stringify(input),
+      errorExcerpt: "failed",
+      failureType: "code_error",
+      recommendedAction: "repair_then_retry",
+    });
+  }
+
+  const blocked = await handler({ toolName: "bash", input }, { ui: { confirm: async () => false } });
   assert.equal(blocked.block, true);
   assert.match(blocked.reason, /uncertainField:/);
   assert.match(blocked.reason, /retryHint:/);
+  assert.match(blocked.reason, /already failed 2 time/);
 
-  if (originalKey === undefined) delete process.env.TYPESAFE_API_KEY;
-  else process.env.TYPESAFE_API_KEY = originalKey;
-  resetClient();
+  // Advisory mode warns instead of blocking.
+  config.toolGate.mode = "advisory";
+  const advisory = await handler({ toolName: "bash", input }, { ui: { confirm: async () => false, notify() {} } });
+  assert.equal(advisory, undefined);
+
   resetState();
 });

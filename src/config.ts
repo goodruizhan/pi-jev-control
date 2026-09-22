@@ -84,6 +84,8 @@ const DEFAULT_CONFIG: JevControlConfig = {
   // remember itself through jev_memory_add. jev_memory_search is unaffected.
   memoryGate: {
     enabled: false,
+    // Even when the watcher is re-enabled it only announces; the model decides.
+    mode: "suggest",
   },
   compaction: {
     enabled: true,
@@ -115,6 +117,9 @@ const DEFAULT_CONFIG: JevControlConfig = {
 
 let cachedConfig: JevControlConfig | null = null;
 let cachedConfigStamp = "";
+// When set, loadConfig() returns cachedConfig verbatim and never re-reads the
+// config files. Used by tests, which want to exercise the defaults themselves.
+let ignoreConfigFiles = false;
 
 function configStamp(paths: string[]): string {
   return paths.map((file) => {
@@ -149,7 +154,7 @@ function readConfigFile(file: string): Record<string, unknown> {
 export function loadConfig(): JevControlConfig {
   const projectConfigPath = path.join(process.cwd(), ".pi", "jev-control.json");
   const stamp = configStamp([CONFIG_PATH, projectConfigPath]);
-  if (cachedConfig && stamp === cachedConfigStamp) return cachedConfig;
+  if (cachedConfig && (ignoreConfigFiles || stamp === cachedConfigStamp)) return cachedConfig;
 
   const merged = deepMerge(readConfigFile(CONFIG_PATH), readConfigFile(projectConfigPath));
 
@@ -216,9 +221,24 @@ function deepMerge<T>(
 }
 
 /**
+ * Restore the pure default configuration, discarding the global and project
+ * config files. Tests use this to be independent of whatever a real user has on
+ * disk — the defaults themselves are the contract under test.
+ *
+ * The file reader is also bypassed, otherwise the first loadConfig() call would
+ * re-merge the on-disk config over the defaults and undo the reset.
+ */
+export function resetConfigToDefaults(): void {
+  ignoreConfigFiles = true;
+  cachedConfig = normalizeJudgmentConfig(structuredClone(DEFAULT_CONFIG));
+  cachedConfigStamp = "";
+}
+
+/**
  * Invalidate the cached config (call after /reload).
  */
 export function invalidateConfig(): void {
+  ignoreConfigFiles = false;
   cachedConfig = null;
   cachedConfigStamp = "";
 }

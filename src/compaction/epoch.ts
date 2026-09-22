@@ -75,6 +75,15 @@ export function getCurrentTurn(): number {
   return epochState.currentTurn;
 }
 
+/**
+ * True when someone asked for a new plan that has not been generated yet.
+ * In non-auto compaction modes this is the only signal that lets the context hook
+ * build a plan, so pruning can never happen without an explicit request.
+ */
+export function hasPendingGeneration(): boolean {
+  return epochState.forceRegeneration;
+}
+
 /** Clear deliberately restores one full-history request before planning again. */
 export function consumeSkipNextGeneration(): boolean {
   if (!epochState.skipNextGeneration) return false;
