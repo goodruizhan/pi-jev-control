@@ -76,13 +76,244 @@ export function isSafeBashCommand(command: string): boolean {
   return false;
 }
 
+// ── Wrapper-aware dangerous detection ───────────────────────────────
+//
+// The pattern table in types.ts is anchored to the start of a segment, so a
+// destructive command hidden inside a wrapper — `sh -c 'rm -rf /'`,
+// `python -c "os.system('rm -rf /')"`, `cmd /c ...`, `eval ...`, or an
+// obfuscation such as `rm$IFS-rf$IFS/` — would otherwise slip through as
+// `uncertain`. The wrapper below unquotes and re-splits those payloads so they
+// are judged exactly like an inline command. It only *adds* dangerous matches,
+// so the safe path is untouched.
+
+const MAX_UNWRAP_DEPTH = 4;
+
+const SHELL_OPTION = String.raw`(?:--[a-zA-Z][\w-]*(?:=\S+)?|-[a-zA-Z]+)`;
+
+interface WrapperRule {
+  pattern: RegExp;
+  group: number;
+}
+
+const WRAPPER_RULES: WrapperRule[] = [
+  // sh -c / bash -lc / zsh -c "payload"
+  {
+    pattern: new RegExp(
+      String.raw`\b(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh|scsh)\b(?:\s+${SHELL_OPTION})*?\s+-[a-zA-Z]*c[a-zA-Z]*\s+(\S+(?:[^\S\n]\S+)*)`,
+      "gi",
+    ),
+    group: 1,
+  },
+  // eval / exec / command / nohup — builtins that run their argument, with an
+  // optional `--` end-of-options marker in between.
+  {
+    pattern: new RegExp(
+      String.raw`\b(?:eval|exec|command|nohup)\b(?:\s+${SHELL_OPTION})*\s+(?:--\s+)?(\S+(?:[^\S\n]\S+)*)`,
+      "gi",
+    ),
+    group: 1,
+  },
+  // nice takes a numeric argument: `nice -n 10 rm -rf /`
+  {
+    pattern: /\bnice\b\s+(?:-[a-zA-Z]+\s+\S+\s+)*(\S+(?:[^\S\n]\S+)*)/gi,
+    group: 1,
+  },
+  // timeout takes a duration first: `timeout 5s rm -rf /`
+  {
+    pattern: new RegExp(
+      String.raw`\btimeout\b\s+\S+(?:\s+${SHELL_OPTION})*\s+(\S+(?:[^\S\n]\S+)*)`,
+      "gi",
+    ),
+    group: 1,
+  },
+  // python3 -c / node -e / perl -e / ruby -e / php -r / lua -e
+  {
+    pattern: new RegExp(
+      String.raw`\b(?:python\d?(?:\.[\d.]+)?|pythonw|node|nodejs|perl|ruby|php|lua|deno)\b(?:\s+${SHELL_OPTION})*?\s+(?:-[a-zA-Z]*[ceer][a-zA-Z]*|--eval|--execute|--command)\s+(\S+(?:[^\S\n]\S+)*)`,
+      "gi",
+    ),
+    group: 1,
+  },
+  // cmd /c payload  |  powershell -Command / -C / -EncodedCommand payload
+  {
+    pattern: /\bcmd(?:\.exe)?\b\s+\/[cCkK]\s+(\S+(?:[^\S\n]\S+)*)/gi,
+    group: 1,
+  },
+  {
+    pattern: /\bpowershell(?:\.exe)?\b[^\r\n;&|]*?\s-(?:Command|C|EC|EncodedCommand)\s+(\S+(?:[^\S\n]\S+)*)/gi,
+    group: 1,
+  },
+  // awk/perl/python/shell one-liners that shell out
+  {
+    pattern: /\bsystem\s*\(\s*['"]([^'"\n]*)['"]/gi,
+    group: 1,
+  },
+  {
+    pattern: /\bpopen\s*\(\s*['"]([^'"\n]*)['"]\s*,\s*['"][a-zA-Z]+['"]/gi,
+    group: 1,
+  },
+];
+
+/**
+ * Destructive constructs that live inside interpreter one-liners, where the
+ * shell-style anchored table cannot see them (e.g. `shutil.rmtree('/')`).
+ */
+const INTERPRETER_DESTRUCTIVE: RegExp[] = [
+  /shutil\.rmtree\s*\(\s*[^)]*[,)]/i,
+  /os\.system\s*\(\s*["'][^"']*(?:\brm\s+-[a-zA-Z]*[rf]\b|unlink|drop\s+table)/i,
+  /subprocess\.\w+\s*\(\s*["'][^"']*(?:\brm\s+-[a-zA-Z]*[rf]\b|unlink)/i,
+  // `child_process.exec('rm -rf /')` and `require('child_process').exec(...)`
+  /(?:\bexec|\bexecSync|\bexecFileSync|\bspawn|\bspawnSync)\s*\(\s*["'][^"']*(?:\brm\s+-[a-zA-Z]*[rf]\b|unlink)/i,
+  /Path\s*\([^)]*\)\.(?:unlink|rmdir)\s*\(/i,
+  // `fs.rmSync('/x', { recursive: true })` and `require('fs').rmSync(...)`
+  /(?:\bfs|["']fs["'])\)?\.rmSync\s*\([^)]*(?:recursive|force\s*[:=]\s*true)/i,
+  // `fs.promises.rm('/x', { recursive: true })`
+  /\.rm\s*\(\s*["'][^"']*["']\s*,\s*\{[^}]*recursive\s*[:=]\s*true/i,
+  /\.unlink\s*\([^)]*recursive\s*[:=]\s*true/i,
+  /remove-item\b[^\r\n;&|]*(?:-recurse|-force)/i,
+];
+
+/**
+ * Strip shell-level obfuscation that hides a destructive command from the
+ * pattern table: `$IFS` used as whitespace, ANSI-C quoting (`$'rm -rf /'`),
+ * and backslash-escaped whitespace inside quotes.
+ */
+function deobfuscate(command: string): string {
+  return command
+    .replace(/\$\{?IFS\}?/gi, " ")
+    .replace(/\$'((?:[^'\\]|\\.)*)'/g, (_match, body: string) =>
+      body
+        .replace(/\\t/g, " ")
+        .replace(/\\n/g, " ")
+        .replace(/\\'/g, "'")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\")
+        .replace(/\\(.)/g, "$1"),
+    );
+}
+
+function stripQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return trimmed.slice(1, -1);
+    }
+  }
+  return trimmed;
+}
+
+/**
+ * Split on shell separators while ignoring separators inside quotes, so
+ * `echo "hello; rm -rf /"` stays one segment and is not misread as a chain.
+ */
+function splitSegments(command: string): string[] {
+  const segments: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (quote !== null) {
+      current += ch;
+      if (ch === quote && command[i - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+    if (ch === ";" || ch === "\n" || ch === "\r") {
+      if (current.trim()) segments.push(current.trim());
+      current = "";
+      continue;
+    }
+    if (ch === "|" || command.startsWith("&&", i)) {
+      if (current.trim()) segments.push(current.trim());
+      current = "";
+      i += ch === "|" && command[i + 1] === "|" ? 1 : command.startsWith("&&", i) ? 1 : 0;
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) segments.push(current.trim());
+  return segments;
+}
+
+/** Extract every wrapper payload so each one is judged as its own block. */
+function expandWrappers(command: string): string[] {
+  const blocks: string[] = [command];
+  for (const rule of WRAPPER_RULES) {
+    rule.pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = rule.pattern.exec(command)) !== null) {
+      const payload = stripQuotes(match[rule.group]);
+      if (payload) blocks.push(payload);
+      if (rule.pattern.lastIndex === match.index) rule.pattern.lastIndex++;
+    }
+  }
+  return blocks;
+}
+
+function stripEnvAssignments(segment: string): string {
+  return segment.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*|^\*\s+/, "").trim();
+}
+
+/**
+ * Replace quoted regions with a neutral space so a separator inside quotes
+ * (`echo "hello; rm -rf /"`) does not look like a command chain. Wrapper
+ * unwrapping already pulled quoted payloads out as their own segments, so
+ * masking them here cannot hide a real destructive command.
+ */
+function maskQuoted(command: string): string {
+  let out = "";
+  let i = 0;
+  while (i < command.length) {
+    const ch = command[i];
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      i++;
+      while (i < command.length) {
+        if (command[i] === "\\") { i += 2; continue; }
+        if (command[i] === quote) { i++; break; }
+        i++;
+      }
+      out += " ";
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 /**
  * Check if a bash command matches known dangerous patterns.
  */
 export function isDangerousBashCommand(command: string): boolean {
-  const trimmed = command.trim();
+  return isSegmentDangerous(command.trim(), 0);
+}
+
+function isSegmentDangerous(segment: string, depth: number): boolean {
+  // Deobfuscation runs first: `$IFS` used as whitespace and ANSI-C quoting
+  // ($'rm -rf /') hide a destructive command from the pattern table.
+  const expanded = deobfuscate(segment);
+  // Shell-level patterns run against the masked form so separators inside
+  // quotes stay inert; interpreter patterns run against the raw form because
+  // their payloads are themselves quoted strings.
+  const stripped = stripEnvAssignments(maskQuoted(expanded));
   for (const pattern of DANGEROUS_BASH_PATTERNS) {
-    if (pattern.test(trimmed)) return true;
+    if (pattern.test(stripped)) return true;
+  }
+  for (const pattern of INTERPRETER_DESTRUCTIVE) {
+    if (pattern.test(expanded)) return true;
+  }
+  if (depth >= MAX_UNWRAP_DEPTH) return false;
+  for (const block of expandWrappers(expanded)) {
+    for (const nested of splitSegments(block)) {
+      if (isSegmentDangerous(nested, depth + 1)) return true;
+    }
   }
   return false;
 }

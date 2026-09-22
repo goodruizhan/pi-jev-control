@@ -46,7 +46,7 @@ export function setupToolGate(pi: ExtensionAPI): void {
     if (!config.enabled || !config.toolGate.enabled) return;
     const advisory = config.toolGate.mode === "advisory";
 
-    const toolName = event.toolName;
+    const toolName = event.toolName.toLowerCase();
     const toolInput = event.input as Record<string, unknown>;
     const inputSummary = JSON.stringify(toolInput).slice(0, 1500);
     const actionKey = getActionKey(toolName, toolInput);
@@ -103,8 +103,8 @@ export function setupToolGate(pi: ExtensionAPI): void {
     }
 
     // ── 2. Shell tool handling ─────────────────────────────────────
-    if (toolName === "bash" || toolName === "powershell") {
-      const command = (toolInput.command as string) ?? "";
+    if (SHELL_TOOLS.has(toolName)) {
+      const command = extractCommand(toolInput);
       const risk = classifyShellCommand(command);
 
       if (risk === "safe" && config.toolGate.useDeterministicFastPath) return;
@@ -142,6 +142,28 @@ export function setupToolGate(pi: ExtensionAPI): void {
 // truth); re-exported here for existing callers/tests.
 export { classifyShellCommand, isDangerousBashCommand, isSafeBashCommand } from "../judge/rules-backend.js";
 import { classifyShellCommand } from "../judge/rules-backend.js";
+
+/** Tool names whose `input` carries an executable command line. */
+const SHELL_TOOLS: Set<string> = new Set(["bash", "sh", "shell", "powershell", "pwsh", "cmd"]);
+
+/**
+ * Pull a command string out of a tool input. Different shells and MCP wrappers
+ * name the field differently (`command`, `cmd`, `shell`, `script`,
+ * `args.command`); reading only `command` made every other spelling fall through
+ * to an empty string, which the safe check rejects and the gate then let pass.
+ */
+export function extractCommand(input: Record<string, unknown>): string {
+  for (const key of ["command", "cmd", "shell", "script"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  const args = input.args;
+  if (typeof args === "object" && args !== null) {
+    const nested = (args as Record<string, unknown>).command;
+    if (typeof nested === "string" && nested.trim()) return nested;
+  }
+  return "";
+}
 
 function rememberApprovedWrite(toolName: string, actionKey: string, enabled: boolean): void {
   if (enabled && isWriteLikeTool(toolName)) approveAction(actionKey);

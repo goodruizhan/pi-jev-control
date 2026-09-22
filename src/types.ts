@@ -453,18 +453,44 @@ export interface SavingsStats {
 
 // ── Dangerous bash patterns ───────────────────────────────────────────
 
+/**
+ * Patterns are anchored to the start of a segment or to a shell separator, so
+ * `foo rm bar` never matches. Segments are produced by the wrapper-aware
+ * splitter in `judge/rules-backend.ts`, which also unquotes `sh -c '...'`
+ * payloads before these patterns are applied.
+ */
 export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
   /(?:^|[;&|]\s*)rm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+/i,
+  // ── git: working-tree loss and history rewriting ──────────────────
   /(?:^|[;&|]\s*)git\s+reset\s+--hard\b/i,
   /(?:^|[;&|]\s*)git\s+clean\s+-[a-zA-Z]*[df]/i,
   /(?:^|[;&|]\s*)git\s+checkout\s+--\s+\./i,
   /(?:^|[;&|]\s*)git\s+restore\s+\./i,
+  /(?:^|[;&|]\s*)git\s+push\b[^\r\n;&|]*--force(?![\w-])/i,
+  /(?:^|[;&|]\s*)git\s+push\b[^\r\n;&|]*\s-[a-zA-Z]*f[a-zA-Z]*\b/i,
+  /(?:^|[;&|]\s*)git\s+(?:filter-branch|filter-repo)\b/i,
+  /(?:^|[;&|]\s*)git\s+branch\s+-D\b/i,
+  // ── privilege / auto-approval ──────────────────────────────────────
   /(?:^|[;&|]\s*)sudo\b/i,
   /(?:^|[;&|]\s*)(?:npm|pnpm|yarn)\s+publish\b/i,
+  /(?:^|[;&|]\s*)(?:npx|npm\s+exec|npm\s+dlx|pnpm\s+dlx|yarn\s+dlx)\b[^\r\n;&|]*(?:--yes\b|-y\b)/i,
+  // ── Windows removal ────────────────────────────────────────────────
   /(?:^|[;&|]\s*)Remove-Item\b[^\r\n;&|]*(?:-Recurse|-Force)/i,
   /(?:^|[;&|]\s*)del\s+\/s/i,
   /(?:^|[;&|]\s*)rmdir\s+\/s/i,
+  // ── disk / partition ───────────────────────────────────────────────
   /(?:^|[;&|]\s*)format\b/i,
   /(?:^|[;&|]\s*)diskpart\b/i,
+  /(?:^|[;&|]\s*)(?:mkfs\b|fdisk\b|sgdisk\b)/i,
+  /(?:^|[;&|]\s*)dd\b[^\r\n;&|]*\bof=\/dev\//i,
+  // ── find can execute or delete ─────────────────────────────────────
   /(?:^|\s)find\b[^\r\n;&|]*(?:-delete|-exec(?:dir)?|-ok(?:dir)?|-fprint)\b/i,
+  // ── recursive metadata changes ─────────────────────────────────────
+  /(?:^|[;&|]\s*)chmod\s+-(?:[a-zA-Z]*[rR][a-zA-Z]*\s+)/i,
+  /(?:^|[;&|]\s*)chown\s+-(?:[a-zA-Z]*[rR][a-zA-Z]*\s+)/i,
+  // ── container / cluster teardown ───────────────────────────────────
+  /(?:^|[;&|]\s*)kubectl\s+delete\b/i,
+  /(?:^|[;&|]\s*)(?:docker|podman)\s+(?:rm\b[^\r\n;&|]*\s-f\b|volume\s+rm\b|system\s+prune\b)/i,
+  // ── SQL teardown (unanchored: SQL keywords are case/statement agnostic)
+  /(?:^|\s)(?:DROP\s+(?:TABLE|DATABASE|INDEX|SCHEMA)\b|TRUNCATE\s+TABLE\b)/i,
 ];
