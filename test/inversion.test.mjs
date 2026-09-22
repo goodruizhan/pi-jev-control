@@ -12,6 +12,9 @@ import { clearAllMemory, getMemoryCount } from "../dist/src/memory/store.js";
 import { assessRisk } from "../dist/src/gates/assess-risk.js";
 import { diagnoseFailure } from "../dist/src/judgment/diagnose-failure.js";
 import { assessTask } from "../dist/src/router/assess-task.js";
+import { judgeTaskTier } from "../dist/src/router/task-router.js";
+import { applyThresholdFallback } from "../dist/src/judge/rank.js";
+import { isSkillRelevant } from "../dist/src/gates/skill-gate.js";
 
 /** Turn the judgment backends off so every tool takes its degraded path. */
 function withJudgeDown(fn) {
@@ -124,6 +127,70 @@ test("rank: no candidates is skipped", async () => {
   const result = await rankCandidates("anything", []);
   assert.equal(result.status, "skipped");
   assert.equal(result.totalCandidates, 0);
+});
+
+test("rank: nothing clearing the threshold still returns a shortlist", () => {
+  // The tool promises never to come back empty-handed when candidates exist.
+  const scored = [
+    { id: "a", score: 0.1, source: "judge" },
+    { id: "b", score: 0.3, source: "judge" },
+    { id: "c", score: 0.2, source: "judge" },
+  ];
+  const { shortlist, reason } = applyThresholdFallback(scored, 0.45, 5);
+  assert.equal(shortlist.length, 2, "falls back to the best two");
+  assert.deepEqual(shortlist.map((item) => item.id), ["b", "c"], "still sorted by score");
+  assert.match(reason ?? "", /below the 0.45 threshold/);
+});
+
+test("rank: the fallback never outruns the requested limit", () => {
+  const scored = [
+    { id: "a", score: 0.1, source: "judge" },
+    { id: "b", score: 0.3, source: "judge" },
+  ];
+  assert.equal(applyThresholdFallback(scored, 0.45, 1).shortlist.length, 1);
+  assert.equal(applyThresholdFallback(scored, 0.45, 3).shortlist.length, 2);
+});
+
+test("rank: a passing shortlist is left alone", () => {
+  const scored = [
+    { id: "a", score: 0.9, source: "judge" },
+    { id: "b", score: 0.1, source: "judge" },
+  ];
+  const { shortlist, reason } = applyThresholdFallback(scored, 0.45, 5);
+  assert.deepEqual(shortlist.map((item) => item.id), ["a"]);
+  assert.equal(reason, undefined);
+});
+
+test("rank: nothing scored returns an empty shortlist without inventing one", () => {
+  const { shortlist, reason } = applyThresholdFallback([], 0.45, 5);
+  assert.deepEqual(shortlist, []);
+  assert.equal(reason, undefined);
+});
+
+test("rank: non-finite limit and threshold are clamped, not silently fatal", async () => {
+  // threshold=NaN filtered every candidate out; limit=NaN made slice(0, NaN)
+  // return an empty shortlist. Both failed without saying so.
+  await withJudgeDown(async () => {
+    const candidates = [
+      { id: "login-screen", text: "Login screen: form and validation" },
+      { id: "forms", text: "Form validation helpers for login and signup screens" },
+    ];
+    for (const [limit, threshold] of [
+      [Number.NaN, 0.45],
+      [5, Number.NaN],
+      [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+      [-1, -1],
+      [9999, 99],
+    ]) {
+      const result = await rankCandidates(
+        "how to write a login screen",
+        candidates,
+        { limit, threshold },
+      );
+      assert.ok(result.shortlist.length > 0, `limit=${limit} threshold=${threshold} returned nothing`);
+      assert.ok(result.shortlist.length <= 200);
+    }
+  });
 });
 
 // ── prune context ────────────────────────────────────────────────────────────
@@ -345,4 +412,110 @@ test("assess task: a disabled gate answers disabled", async () => {
   assert.equal(result.status, "disabled");
   assert.equal(result.tier, "unknown");
   config.enabled = true;
+});
+
+test("assess task: a backend error is unavailable, not a zero-confidence verdict", async () => {
+  // The rules backend is always "available" but cannot answer task_tier, so the
+  // call takes the error path instead of the unavailable-backend path. Before
+  // the fix, assessTask matched the literal reason "judgment backend
+  // unavailable", so this returned status "ok" with a confidence of zero and no
+  // hint that the tier was a floor rather than a judgment.
+  resetConfigToDefaults();
+  const config = loadConfig();
+  config.judgment.backend = "rules";
+  resetJudgeBackends();
+  try {
+    const judge = await judgeTaskTier("Fix a typo in the README");
+    assert.equal(judge.source, "fallback");
+    assert.equal(judge.backendDown, true);
+    assert.equal(judge.confidence, 0);
+
+    const result = await assessTask("Fix a typo in the README");
+    assert.equal(result.status, "unavailable");
+  } finally {
+    resetConfigToDefaults();
+    resetJudgeBackends();
+  }
+});
+
+test("assess task: a transport failure keeps status unavailable", async () => {
+  // A reachable-looking backend that errors at the wire is the path the literal
+  // reason match missed: the reason was "<errorType>: <message>", never the
+  // unavailable-backend string. Port 9 (discard) refuses immediately, so this
+  // fails deterministically without a real network round trip.
+  resetConfigToDefaults();
+  const config = loadConfig();
+  config.judgment.backend = "loopback";
+  config.judgment.backends.loopback = {
+    type: "openai-compatible",
+    model: "test-model",
+    baseUrl: "http://127.0.0.1:9",
+    timeoutMs: 300,
+  };
+  resetJudgeBackends();
+  try {
+    const judge = await judgeTaskTier("Fix a typo in the README");
+    assert.equal(judge.backendDown, true);
+    assert.notEqual(judge.reason, "judgment backend unavailable");
+
+    const result = await assessTask("Fix a typo in the README");
+    assert.equal(result.status, "unavailable");
+  } finally {
+    resetConfigToDefaults();
+    resetJudgeBackends();
+  }
+});
+
+// ── skill exclusion ────────────────────────────────────────────────────────
+
+const SKILL_NAME = "ue5-blueprint-workflow";
+const SKILL_DESC = "Blueprint graph workflow for feature implementation";
+
+test("skill exclusion: plural and CJK surface forms both exclude", () => {
+  // "no blueprints" carried the plural while skillTokens() had already reduced
+  // the token to "blueprint", so the whitespace-or-punctuation look-ahead never
+  // matched. The same gap affected CJK queries: "不涉及蓝图" carries the CJK
+  // surface form, never the English canonical token the regex looked for.
+  // Known limit: a qualifier AFTER the noun ("与蓝图无关") is still not excluded,
+  // because making the trailing qualifier optional would exclude harmless phrases
+  // such as "蓝图, 继续".
+  for (const query of [
+    "no blueprints",
+    "not blueprints",
+    "without blueprints",
+    "excluding blueprints",
+    "no blueprint",
+    "不涉及蓝图",
+    "不需要蓝图",
+    "无需蓝图",
+    "排除蓝图",
+    "不使用蓝图",
+    "不要使用蓝图",
+  ]) {
+    assert.equal(
+      isSkillRelevant(query, SKILL_NAME, SKILL_DESC, 0.95, 0.4),
+      false,
+      `should exclude: ${query}`,
+    );
+  }
+});
+
+test("skill exclusion: a plain mention still matches", () => {
+  assert.equal(
+    isSkillRelevant("how do I wire a blueprint graph", SKILL_NAME, SKILL_DESC, 0.95, 0.4),
+    true,
+  );
+  assert.equal(
+    isSkillRelevant("蓝图工作流怎么接线", SKILL_NAME, SKILL_DESC, 0.95, 0.4),
+    true,
+  );
+});
+
+test("skill exclusion: a lookalike phrase does not exclude", () => {
+  // "蓝色" (blue, as a colour) shares a prefix with "蓝图" (blueprint) but is a
+  // different word, so the exclusion must not fire on it.
+  assert.equal(
+    isSkillRelevant("不涉及蓝色主题", SKILL_NAME, SKILL_DESC, 0.95, 0.4),
+    true,
+  );
 });

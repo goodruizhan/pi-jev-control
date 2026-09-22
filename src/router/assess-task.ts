@@ -41,7 +41,13 @@ export async function assessTask(
   const text = [context, task].filter((part) => part && part.trim()).join("\n").slice(0, 2000);
   const result = await judgeTaskTier(text, signal);
 
-  const backendDown = result.source === "fallback" && result.reason === "judgment backend unavailable";
+  // `backendDown` marks a backend failure specifically. String-matching the
+  // reason here was wrong: judgeTaskTier has four failure paths (unavailable,
+  // aborted, error, thrown) and only one of them produced this literal, so a
+  // timeout or an auth failure came back as status "ok" with a confidence of
+  // zero and no hint that the tier was not a judgment. Low-confidence fallback
+  // also uses source "fallback" but is a real judgment, so it must stay "ok".
+  const backendDown = result.backendDown ?? false;
   return {
     status: backendDown ? "unavailable" : "ok",
     tier: result.tier,

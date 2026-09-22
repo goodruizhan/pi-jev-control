@@ -76,6 +76,15 @@ export interface RouterResult {
   latencyMs: number;
   timestamp: number;
   source?: "judge" | "override" | "fallback" | "risk-floor";
+  /**
+   * Set when the tier came from a backend failure (backend unavailable, the
+   * request was aborted, the call errored, or it threw) rather than from a
+   * judgment. Callers that surface the tier to a human need to distinguish
+   * "Jev thought this was medium" from "Jev never answered, this is the
+   * deterministic floor" — string-matching `reason` cannot tell them apart,
+   * because the low-confidence fallback also uses `source: "fallback"`.
+   */
+  backendDown?: boolean;
   reason?: string;
   backend?: string;
   riskFeatures?: string[];

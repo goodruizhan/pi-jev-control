@@ -317,12 +317,27 @@ function hasExplicitSkillExclusion(query: string, name: string, description: str
 
   for (const token of queryTokens) {
     if (!candidateTokens.has(token)) continue;
-    // Tokens come from letters/numbers/CJK only, so they are safe to interpolate.
-    const exclusion = new RegExp(
-      `(?:不涉及|不使用|不要(?:使用)?|不需要|无需|不包括|排除|无关|not|without|excluding|no)\\s*(?:the\\s*)?${token}(?=$|[\\s,，。；;、])`,
-      "i",
-    );
-    if (exclusion.test(lowerQuery)) return true;
+    // A query can name a skill in either language: "no blueprints" carries the
+    // English canonical token, while "不涉及蓝图" carries the CJK surface form. skillTokens()
+    // collapses both to the canonical token, so the exclusion has to be probed
+    // against every surface form that maps to it.
+    const surfaces = [token];
+    for (const [alias, canonical] of Object.entries(SKILL_TERM_ALIASES)) {
+      if (canonical === token && alias !== token) surfaces.push(alias);
+    }
+    for (const surface of surfaces) {
+      // Tokens and aliases are letters/numbers/CJK only, so they are safe to
+      // interpolate. The trailing s? reverses the singularization skillTokens()
+      // applies to English tokens longer than four characters: without it
+      // "no blueprints" never matched, because the token is "blueprint" while
+      // the query still carries the "s", which broke the look-ahead that demands
+      // whitespace or punctuation right after the token.
+      const exclusion = new RegExp(
+        `(?:不涉及|不使用|不要(?:使用)?|不需要|无需|不包括|排除|无关|not|without|excluding|no)\\s*(?:the\\s*)?${surface}s?(?=$|[\\s,，。；;、])`,
+        "i",
+      );
+      if (exclusion.test(lowerQuery)) return true;
+    }
   }
   return false;
 }

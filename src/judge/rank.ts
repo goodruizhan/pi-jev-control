@@ -91,6 +91,40 @@ function lexicalPrefilter(query: string, candidates: RankCandidate[]): LexicalHi
   return hits;
 }
 
+/**
+ * Sort, apply the threshold, and fall back to the best few when nothing clears
+ * the bar. Kept pure and exported so the fallback contract can be tested without
+ * a live judgment backend.
+ */
+export function applyThresholdFallback(
+  scored: RankedItem[],
+  threshold: number,
+  limit: number,
+): { shortlist: RankedItem[]; reason: string | undefined } {
+  // Sort before filtering so a below-threshold fallback can hand back the best
+  // few instead of an empty answer.
+  const ranked = [...scored].sort((a, b) => b.score - a.score);
+  const shortlist = ranked.filter((item) => item.score >= threshold).slice(0, limit);
+  if (shortlist.length > 0) return { shortlist, reason: undefined };
+  if (ranked.length === 0) return { shortlist: [], reason: undefined };
+
+  // The tool promises never to come back empty-handed when candidates exist.
+  // When every judged score falls below the threshold the caller would see an
+  // empty shortlist and learn nothing — mirror jev_search_code's low-confidence
+  // fallback and hand back the best few with an explicit note.
+  const fallback = ranked.slice(0, Math.min(2, limit));
+  return {
+    shortlist: fallback,
+    reason: `all ${ranked.length} candidate(s) scored below the ${threshold.toFixed(2)} threshold; top ${fallback.length} returned anyway`,
+  };
+}
+
+/** Clamp a JSON-supplied number into [min, max], falling back when non-finite. */
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
 export async function rankCandidates(
   query: string,
   candidates: RankCandidate[],
@@ -98,9 +132,12 @@ export async function rankCandidates(
   signal?: AbortSignal,
   module?: string,
 ): Promise<RankResult> {
-  const limit = Math.max(0, options?.limit ?? 5);
-  const threshold = options?.threshold ?? 0.45;
-  const maxForJudge = Math.max(1, options?.maxForJudge ?? 20);
+  // The model passes these as JSON numbers, so a non-finite value is possible:
+  // threshold=NaN filtered every candidate out, and limit=NaN made
+  // slice(0, NaN) return an empty shortlist. Both failed silently.
+  const limit = clampNumber(options?.limit ?? 5, 1, 200, 5);
+  const threshold = clampNumber(options?.threshold ?? 0.45, 0, 1, 0.45);
+  const maxForJudge = clampNumber(options?.maxForJudge ?? 20, 1, 200, 20);
 
   const trimmedQuery = (query ?? "").trim();
   const boundedCandidates = candidates.slice(0, 200);
@@ -183,10 +220,9 @@ export async function rankCandidates(
     return { id: hit.candidate.id, score: relevance, source: "judge" };
   });
 
-  const shortlist = scored
-    .filter((item) => item.score >= threshold)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  // Sort before filtering so a below-threshold fallback can hand back the best
+  // few instead of an empty answer.
+  const { shortlist, reason } = applyThresholdFallback(scored, threshold, limit);
 
   return {
     ...base,
@@ -195,6 +231,7 @@ export async function rankCandidates(
     shortlist,
     backend: result.backend,
     latencyMs: result.latencyMs,
+    reason,
   };
 }
 

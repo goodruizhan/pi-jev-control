@@ -91,7 +91,7 @@ function previousContext(ctx?: ExtensionContext): Record<string, unknown> {
 function fallbackResult(tier: "medium" | "strong", reason: string): RouterResult {
   return {
     tier, confidence: 0, rawChoice: "unknown", rawConfidence: 0,
-    latencyMs: 0, timestamp: Date.now(), source: "fallback", reason,
+    latencyMs: 0, timestamp: Date.now(), source: "fallback", reason, backendDown: true,
   };
 }
 
