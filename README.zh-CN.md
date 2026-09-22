@@ -4,6 +4,12 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v0.9 模型路由优先级与思考等级
+
+- **同等级多模型** — `router.models.<tier>` 可配置有序候选数组，按顺序尝试；首选模型不存在或认证不可用时自动使用后续候选
+- **逐路由思考等级** — 每个模型目标可设置 `thinking`，选中模型后调用 Pi 的 `setThinkingLevel()`；同一模型可在 `medium` 和 `strong` 等级使用不同思考强度
+- **向后兼容** — 原有的单对象模型配置继续有效
+
 ## v0.8 检索与后端可靠性
 
 ### v0.8.2 检索根目录、备用后端兼容性与技能拒答
@@ -136,9 +142,28 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "fallbackTier": "medium",
     "mode": "set-model",
     "models": {
-      "cheap": { "provider": "REPLACE_ME", "model": "REPLACE_ME" },
-      "medium": { "provider": "REPLACE_ME", "model": "REPLACE_ME" },
-      "strong": { "provider": "REPLACE_ME", "model": "REPLACE_ME" }
+      "cheap": {
+        "provider": "openai-codex",
+        "model": "gpt-5.6-luna",
+        "thinking": "low"
+      },
+      "medium": {
+        "provider": "openai-codex",
+        "model": "gpt-5.6-sol",
+        "thinking": "medium"
+      },
+      "strong": [
+        {
+          "provider": "sensenova",
+          "model": "kimi-k3",
+          "thinking": "high"
+        },
+        {
+          "provider": "openai-codex",
+          "model": "gpt-5.6-sol",
+          "thinking": "high"
+        }
+      ]
     }
   },
   "toolGate": {
@@ -201,6 +226,8 @@ pi install git:github.com/goodruizhan/pi-jev-control
 ```
 
 项目级配置文件为 `<project>/.pi/jev-control.json`，其中的设置会覆盖全局配置。
+
+`router.models` 的每个等级既可以使用原来的单对象格式，也可以使用候选数组。数组从前到后表示优先级。`thinking` 可取 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`；Pi 会按目标模型实际支持的等级进行映射或限制。候选回退发生在模型未注册或缺少认证时，不会对已经开始的模型 API 请求执行 429/网络错误重试。
 
 ### 判断后端
 

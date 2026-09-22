@@ -14,9 +14,9 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 0.8.2 |
-| 基线提交 | v0.8.2 提交以 `git log -1` 为准 |
-| 测试 | 73/73 通过（`npm test`） |
+| 版本 | 0.9.0 |
+| 基线提交 | v0.9.0 提交以 `git log -1` 为准 |
+| 测试 | 76/76 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
@@ -80,6 +80,7 @@ interface JudgmentBackend {
 3. **向后兼容**：旧版顶层 `jev.model` / `jev.timeoutMs` 仍然有效，`config.ts` 的 `normalizeJudgmentConfig()` 会把它补进 `judgment.backends.typesafe`。老用户零迁移。
 4. **advisory 是默认门控模式**：`toolGate.mode: "advisory"` 时**从不弹确认框、从不拦截**，只发通知（且 `errors-only` 下通知也被抑制）。只有改成 `"enforce"` 才有 `ctx.ui.confirm()`。用户明确要求不打断工作流。
 5. **失败注记**：工具失败后 failure-classifier 会把 `[pi-jev-control 插件评估——并非工具输出]` 追加到工具结果里（原始结果不变、不阻塞）。由 `retryJudge.enabled` 总控；`retryJudge.appendToResult: false` 可只关掉追加文字、保留失败记忆和重试判断。
+6. **模型候选与思考等级（v0.9）**：`router.models.<tier>` 接受单个 `ModelSpec` 或按优先级排列的数组；`thinking` 在模型选中后调用 `pi.setThinkingLevel()`。同一模型命中不同 tier 时也必须重新应用 thinking，不能因为模型未变化就提前返回。候选回退仅覆盖模型未注册、缺少认证或 `setModel()` 抛错，不负责已开始请求后的 429/网络重试。
 
 ## 5. 环境坑（踩过的，别再踩）
 
@@ -92,6 +93,7 @@ interface JudgmentBackend {
 7. **代码检索查询不能整句直接交给 rg**：自然语言整句几乎零命中且正则字符会破坏搜索。v0.8 用最多 8 个字面量术语扩大召回，再做本地词法排序和 Jev rerank。
 8. **技能排序要保留精确命中下限**：SKILL.md 的 `description: >` / `|` 必须读取后续缩进行；大批量 Noul 偶尔会压低显式技术名的分数，当前用 `max(model*0.8, lexical)` 保护精确术语/技能名匹配，并对常见中英双语交互术语做归一化，别退回纯模型排序。
 9. **编辑工具是原子操作**：一个 `oldText` 不匹配则整批全部不生效，容易误以为改成功了。改完务必看返回值。
+10. **思考等级由 Pi 最终限制**：插件请求的 `thinking` 可能被模型的 `thinkingLevelMap` 映射或钳制；路由器会读取实际等级并在不一致时发 warning。Kimi K3 当前不支持 `medium`，而 GPT-5.6 Sol 支持 `low/medium/high/xhigh/max`。
 
 ## 6. 已知待办（v0.8 后仍留，不是丢了）
 

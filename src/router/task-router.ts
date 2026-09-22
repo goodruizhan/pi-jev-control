@@ -4,8 +4,8 @@ import { judge, isJudgeAvailable } from "../judge/facade.js";
 import { TASK_TIER_QUESTION } from "../judge/questions.js";
 import { buildRouterResult } from "../judge/normalize.js";
 import { runtimeState } from "../state/runtime-state.js";
-import { routeModel } from "./model-router.js";
-import type { RouterResult } from "../types.js";
+import { isConfiguredModelSpec, modelCandidates, routeModel } from "./model-router.js";
+import type { JevControlConfig, RouterResult } from "../types.js";
 import { SHORT_CONFIRMATIONS } from "../types.js";
 import { recordModelTierDecision } from "../stats/savings.js";
 import { tr } from "../i18n.js";
@@ -103,12 +103,9 @@ export async function routeTask(
 }
 
 /** Skip a network classification when no configured model could consume it. */
-export function hasConfiguredRouterTarget(models: ReturnType<typeof loadConfig>["router"]["models"]): boolean {
-  return Object.values(models).some((model) =>
-    model.provider !== "REPLACE_ME" &&
-    model.model !== "REPLACE_ME" &&
-    model.provider.trim().length > 0 &&
-    model.model.trim().length > 0
+export function hasConfiguredRouterTarget(models: JevControlConfig["router"]["models"]): boolean {
+  return Object.values(models).some((route) =>
+    modelCandidates(route).some(isConfiguredModelSpec),
   );
 }
 

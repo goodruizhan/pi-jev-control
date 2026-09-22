@@ -1,20 +1,36 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config.js";
-import type { TaskTier } from "../types.js";
-import { runtimeState } from "../state/runtime-state.js";
+import type { ModelRouteSpec, ModelSpec, TaskTier } from "../types.js";
 import { tr } from "../i18n.js";
 import { notifyAutomatic } from "../ui.js";
 
+/** Normalize a legacy single target or an ordered target list. */
+export function modelCandidates(route: ModelRouteSpec | undefined): ModelSpec[] {
+  if (!route) return [];
+  return (Array.isArray(route) ? route : [route]).filter(
+    (spec): spec is ModelSpec => Boolean(spec) && typeof spec.provider === "string" && typeof spec.model === "string",
+  );
+}
+
+/** True when the target names a real Pi model instead of a placeholder. */
+export function isConfiguredModelSpec(spec: ModelSpec): boolean {
+  return Boolean(
+    spec.provider.trim().length > 0 &&
+    spec.model.trim().length > 0 &&
+    spec.provider !== "REPLACE_ME" &&
+    spec.model !== "REPLACE_ME",
+  );
+}
+
 /**
- * Model Router — maps task tier to a configured model and switches via pi.setModel().
+ * Model Router — maps task tier to configured model candidates and switches via
+ * pi.setModel(). Candidates are tried in array order. After selection, an
+ * optional per-target thinking level is applied with pi.setThinkingLevel().
  *
  * Modes:
  * - "set-model": directly switch Pi model via pi.setModel()
- * - "tier-only": only record the tier, don't switch model (for auto-model-router compatibility)
- *
- * On failure: keep current model, UI warning, log failure, don't interrupt.
+ * - "tier-only": record tier decision but do not switch model
  */
-
 export async function routeModel(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -24,43 +40,86 @@ export async function routeModel(
 
   if (!config.enabled || !config.router.enabled) return false;
 
-  // tier-only mode — just record, don't switch
   if (config.router.mode === "tier-only") {
-    return true; // no-op, success
-  }
-
-  // set-model mode
-  if (tier === "unknown") {
-    // No switch for unknown
-    return false;
-  }
-
-  const modelSpec = config.router.models[tier];
-  if (!modelSpec || modelSpec.provider === "REPLACE_ME" || modelSpec.model === "REPLACE_ME") {
-    notifyAutomatic(ctx, tr(`[Jev] Model not configured for tier "${tier}", keeping current model`, `[Jev] 未配置“${tier}”等级的模型，将保留当前模型`), "info");
-    return false;
-  }
-
-  try {
-    // Find the model in the registry
-    const model = ctx.modelRegistry.find(modelSpec.provider, modelSpec.model);
-    if (!model) {
-      notifyAutomatic(ctx, tr(`[Jev] Model "${modelSpec.provider}/${modelSpec.model}" not found in registry`, `[Jev] 在模型注册表中找不到“${modelSpec.provider}/${modelSpec.model}”`), "warning");
-      return false;
-    }
-
-    // Switch model
-    const success = await pi.setModel(model);
-    if (!success) {
-      notifyAutomatic(ctx, tr(`[Jev] Failed to switch to ${modelSpec.provider}/${modelSpec.model} (auth may be missing)`, `[Jev] 无法切换到 ${modelSpec.provider}/${modelSpec.model}（可能缺少身份验证）`), "warning");
-      return false;
-    }
-
-    notifyAutomatic(ctx, tr(`[Jev] Switched to ${modelSpec.provider}/${modelSpec.model} (tier: ${tier})`, `[Jev] 已切换到 ${modelSpec.provider}/${modelSpec.model}（等级：${tier}）`), "info");
     return true;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    notifyAutomatic(ctx, tr(`[Jev] Model switch failed: ${msg}`, `[Jev] 模型切换失败：${msg}`), "warning");
+  }
+
+  const requestedTier = tier === "unknown" ? config.router.fallbackTier : tier;
+  const effectiveTier = requestedTier === "cheap" || requestedTier === "medium" || requestedTier === "strong"
+    ? requestedTier
+    : "medium";
+  const candidates = modelCandidates(config.router.models[effectiveTier]).filter(isConfiguredModelSpec);
+
+  if (candidates.length === 0) {
+    notifyAutomatic(ctx, tr(
+      `No model configured for tier "${effectiveTier}"`,
+      `等级“${effectiveTier}”未配置模型`,
+    ), "error");
     return false;
   }
+
+  const failures: string[] = [];
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const spec = candidates[index];
+    const model = ctx.modelRegistry.find(spec.provider, spec.model);
+
+    if (!model) {
+      failures.push(`${spec.provider}/${spec.model}: not found`);
+      continue;
+    }
+
+    const isCurrentModel = ctx.model?.provider === spec.provider && ctx.model?.id === spec.model;
+    if (!isCurrentModel) {
+      try {
+        const success = await pi.setModel(model);
+        if (!success) {
+          failures.push(`${spec.provider}/${spec.model}: authentication unavailable`);
+          continue;
+        }
+      } catch (err) {
+        failures.push(`${spec.provider}/${spec.model}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+    }
+
+    let actualThinking: string | undefined;
+    if (spec.thinking) {
+      try {
+        pi.setThinkingLevel(spec.thinking);
+        actualThinking = pi.getThinkingLevel();
+      } catch (err) {
+        notifyAutomatic(ctx, tr(
+          `Switched to ${spec.provider}/${spec.model}, but could not set thinking level "${spec.thinking}": ${err instanceof Error ? err.message : String(err)}`,
+          `已切换到 ${spec.provider}/${spec.model}，但无法设置思考等级“${spec.thinking}”：${err instanceof Error ? err.message : String(err)}`,
+        ), "warning");
+      }
+    }
+
+    if (isCurrentModel && !spec.thinking) return true;
+
+    const fallbackNote = index > 0
+      ? tr(` (fallback candidate ${index + 1})`, `（回退候选 ${index + 1}）`)
+      : "";
+    const thinkingNote = spec.thinking
+      ? actualThinking === spec.thinking
+        ? tr(` with thinking ${actualThinking}`, `，思考等级 ${actualThinking}`)
+        : tr(
+          ` with thinking ${actualThinking ?? "unchanged"} (requested ${spec.thinking})`,
+          `，思考等级 ${actualThinking ?? "未更改"}（请求 ${spec.thinking}）`,
+        )
+      : "";
+
+    notifyAutomatic(ctx, tr(
+      `Switched to ${spec.provider}/${spec.model}${thinkingNote} for ${effectiveTier} task${fallbackNote}`,
+      `已为 ${effectiveTier} 任务切换到 ${spec.provider}/${spec.model}${thinkingNote}${fallbackNote}`,
+    ), actualThinking && spec.thinking && actualThinking !== spec.thinking ? "warning" : "info");
+    return true;
+  }
+
+  notifyAutomatic(ctx, tr(
+    `No available model for tier "${effectiveTier}". Tried: ${failures.join("; ")}`,
+    `等级“${effectiveTier}”没有可用模型。已尝试：${failures.join("；")}`,
+  ), "error");
+  return false;
 }

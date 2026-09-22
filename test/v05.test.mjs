@@ -70,12 +70,18 @@ test("automatic notifications stay quiet except for configured errors", () => {
 test("task routing skips Jev when no model target is configured", () => {
   assert.equal(hasConfiguredRouterTarget({
     cheap: { provider: "REPLACE_ME", model: "REPLACE_ME" },
-    medium: { provider: "REPLACE_ME", model: "REPLACE_ME" },
-    strong: { provider: "REPLACE_ME", model: "REPLACE_ME" },
+    medium: [{ provider: "", model: "" }],
+    strong: [
+      { provider: "REPLACE_ME", model: "REPLACE_ME" },
+      { provider: "", model: "" },
+    ],
   }), false);
   assert.equal(hasConfiguredRouterTarget({
-    cheap: { provider: "openai", model: "small" },
-    medium: { provider: "REPLACE_ME", model: "REPLACE_ME" },
+    cheap: { provider: "REPLACE_ME", model: "REPLACE_ME" },
+    medium: [
+      { provider: "REPLACE_ME", model: "REPLACE_ME" },
+      { provider: "openai", model: "small", thinking: "medium" },
+    ],
     strong: { provider: "REPLACE_ME", model: "REPLACE_ME" },
   }), true);
 });

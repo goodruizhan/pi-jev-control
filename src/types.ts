@@ -156,9 +156,9 @@ export interface JevControlConfig {
     fallbackTier: TaskTier;
     mode: "set-model" | "tier-only";
     models: {
-      cheap: ModelSpec;
-      medium: ModelSpec;
-      strong: ModelSpec;
+      cheap: ModelRouteSpec;
+      medium: ModelRouteSpec;
+      strong: ModelRouteSpec;
     };
   };
   toolGate: {
@@ -221,10 +221,17 @@ export interface JevControlConfig {
   };
 }
 
+export type RouterThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface ModelSpec {
   provider: string;
   model: string;
+  /** Optional Pi thinking level applied after this model is selected. */
+  thinking?: RouterThinkingLevel;
 }
+
+/** A single legacy target or an ordered list of preferred targets. */
+export type ModelRouteSpec = ModelSpec | ModelSpec[];
 
 // ── Judgment backend configuration ──────────────────────────────────────
 

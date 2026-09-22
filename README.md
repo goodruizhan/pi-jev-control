@@ -4,6 +4,12 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v0.9 Model Priority and Thinking Levels
+
+- **Multiple models per tier** — `router.models.<tier>` accepts an ordered candidate list; later candidates are used when a preferred model is missing or lacks authentication
+- **Per-route thinking** — each model target can set `thinking`, applied through Pi's `setThinkingLevel()` after model selection; the same model can use different thinking levels for `medium` and `strong`
+- **Backward compatible** — existing single-object model targets continue to work
+
 ## v0.8 Search & Backend Reliability
 
 ### v0.8.2 Search roots, fallback compatibility, and skill abstention
@@ -136,9 +142,28 @@ Create `~/.pi/agent/jev-control.json`:
     "fallbackTier": "medium",
     "mode": "set-model",
     "models": {
-      "cheap": { "provider": "REPLACE_ME", "model": "REPLACE_ME" },
-      "medium": { "provider": "REPLACE_ME", "model": "REPLACE_ME" },
-      "strong": { "provider": "REPLACE_ME", "model": "REPLACE_ME" }
+      "cheap": {
+        "provider": "openai-codex",
+        "model": "gpt-5.6-luna",
+        "thinking": "low"
+      },
+      "medium": {
+        "provider": "openai-codex",
+        "model": "gpt-5.6-sol",
+        "thinking": "medium"
+      },
+      "strong": [
+        {
+          "provider": "sensenova",
+          "model": "kimi-k3",
+          "thinking": "high"
+        },
+        {
+          "provider": "openai-codex",
+          "model": "gpt-5.6-sol",
+          "thinking": "high"
+        }
+      ]
     }
   },
   "toolGate": {
@@ -201,6 +226,8 @@ Create `~/.pi/agent/jev-control.json`:
 ```
 
 Project-level config override: `<project>/.pi/jev-control.json` (overrides global).
+
+Each `router.models` tier accepts either the legacy single object or an ordered candidate array. `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; Pi maps or clamps the requested level to the selected model's supported levels. Candidate fallback covers missing models and unavailable authentication, not 429/network failures after a model request has started.
 
 ### Judgment backends
 

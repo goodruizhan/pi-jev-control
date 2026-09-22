@@ -8,6 +8,7 @@ import { resetSavings, formatSavings } from "../src/stats/savings.js";
 import { isJudgeAvailable, getJudgeUnavailableReason, judge } from "../src/judge/facade.js";
 import { allConfiguredBackends } from "../src/judge/registry.js";
 import { setupTaskRouter } from "../src/router/task-router.js";
+import { modelCandidates } from "../src/router/model-router.js";
 import { setupToolGate } from "../src/gates/tool-gate.js";
 import { setupFailureClassifier } from "../src/judgment/failure-classifier.js";
 import { setupContextGate } from "../src/gates/context-gate.js";
@@ -48,7 +49,7 @@ export default function (pi: ExtensionAPI) {
   // Warn once when the model router still has placeholder targets — routing
   // silently no-ops in that state, which is confusing without a hint.
   if (config.router.enabled && config.router.mode === "set-model") {
-    const specs = Object.values(config.router.models);
+    const specs = Object.values(config.router.models).flatMap(modelCandidates);
     if (specs.some((spec) => spec.provider === "REPLACE_ME" || spec.model === "REPLACE_ME")) {
       console.log(tr(
         `[pi-jev-control] router.models contains REPLACE_ME placeholders — set real provider/model in ${getConfigPath()} to enable model routing`,
