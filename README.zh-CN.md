@@ -139,7 +139,9 @@ pi install git:github.com/goodruizhan/pi-jev-control
   "router": {
     "enabled": true,
     "confidenceThreshold": 0.70,
+    "cheapConfidenceThreshold": 0.85,
     "fallbackTier": "medium",
+    "routerFailureTier": "medium",
     "mode": "set-model",
     "models": {
       "cheap": {
@@ -227,7 +229,11 @@ pi install git:github.com/goodruizhan/pi-jev-control
 
 项目级配置文件为 `<project>/.pi/jev-control.json`，其中的设置会覆盖全局配置。
 
-`router.models` 的每个等级既可以使用原来的单对象格式，也可以使用候选数组。数组从前到后表示优先级。`thinking` 可取 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`；Pi 会按目标模型实际支持的等级进行映射或限制。候选回退发生在模型未注册或缺少认证时，不会对已经开始的模型 API 请求执行 429/网络错误重试。
+`router.models` 的每个等级既可以使用原来的单对象格式，也可以使用候选数组。数组从前到后表示优先级。`thinking` 可取 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`；Pi 会按目标模型实际支持的等级进行映射或限制。当前等级的候选都不可用时，会继续尝试更高等级；不会向下回退，也不会重试已经开始的模型 API 请求。
+
+路由会结合最近对话、工具调用、失败记录和输入中提取的风险特征。高风险特征会将任务等级至少提高到 `medium` 或 `strong`；`cheapConfidenceThreshold` 是进入 `cheap` 的额外门槛，自报置信度或相似度后端至少要求 0.95，仍不能替代风险规则或真实任务评测。Jev 不可用或调用失败时使用 `routerFailureTier`，不会继承上次的便宜模型。短确认词继承当前任务等级。超过 4000 字符的输入保留开头和结尾，同时对全文提取风险。工具结果显示多文件修改或反复失败时会为后续步骤升级模型。
+
+可以在输入开头写 `[cheap]`、`[medium]` 或 `[strong]` 强制本次初始等级；任务执行中发现的新风险仍可触发升级。`/jev route strong` 等命令将等级用于下一条实质性输入。`/jev last` 显示原始判断、请求等级、实际模型和切换结果；最近 50 条结构化路由记录保留在进程内并写入 Pi 控制台日志。修改配置文件后下次读取即可生效；修改插件源码仍需重新加载扩展。若使用 `pi install` 的 Git 安装副本，开发目录中的修改不会自动同步，需更新安装副本并重启 Pi。
 
 ### 判断后端
 
@@ -274,6 +280,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 - `/jev stats` — 显示 API 使用统计
 - `/jev savings` — 显示预计节省量（v0.3）
 - `/jev last` — 显示上一次路由决策
+- `/jev route cheap|medium|strong` — 为下一条实质性输入指定初始等级
 - `/jev language en|zh-CN` — 切换并持久保存界面语言
 - `/jev router on|off` — 开启或关闭任务路由器
 - `/jev toolgate on|off` — 开启或关闭工具门控

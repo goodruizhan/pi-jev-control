@@ -37,6 +37,8 @@ const DEFAULT_CONFIG: JevControlConfig = {
     enabled: true,
     confidenceThreshold: 0.7,
     fallbackTier: "medium",
+    routerFailureTier: "medium",
+    cheapConfidenceThreshold: 0.85,
     mode: "set-model",
     models: {
       cheap: { provider: "REPLACE_ME", model: "REPLACE_ME" },
@@ -103,6 +105,31 @@ const DEFAULT_CONFIG: JevControlConfig = {
 };
 
 let cachedConfig: JevControlConfig | null = null;
+let cachedConfigStamp = "";
+
+function configStamp(paths: string[]): string {
+  return paths.map((file) => {
+    try {
+      const stat = fs.statSync(file);
+      return `${file}:${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return `${file}:missing`;
+    }
+  }).join("|");
+}
+
+function readConfigFile(file: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf-8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected a JSON object");
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.warn(`[pi-jev-control] Invalid config ${file}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return {};
+  }
+}
 
 /**
  * Load configuration with merge order:
@@ -111,31 +138,16 @@ let cachedConfig: JevControlConfig | null = null;
  * Never throws — always returns a valid config.
  */
 export function loadConfig(): JevControlConfig {
-  if (cachedConfig) return cachedConfig;
+  const projectConfigPath = path.join(process.cwd(), ".pi", "jev-control.json");
+  const stamp = configStamp([CONFIG_PATH, projectConfigPath]);
+  if (cachedConfig && stamp === cachedConfigStamp) return cachedConfig;
 
-  let merged: Partial<JevControlConfig> = {};
-
-  // 1. Global config
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
-    merged = JSON.parse(raw);
-  } catch {
-    // Config file doesn't exist or is invalid — use defaults
-  }
-
-  // 2. Project config override
-  try {
-    const projectConfigPath = path.join(process.cwd(), ".pi", "jev-control.json");
-    const raw = fs.readFileSync(projectConfigPath, "utf-8");
-    const projectConfig = JSON.parse(raw);
-    merged = deepMerge(merged as Record<string, unknown>, projectConfig as Record<string, unknown>) as Partial<JevControlConfig>;
-  } catch {
-    // Project config doesn't exist — use global
-  }
+  const merged = deepMerge(readConfigFile(CONFIG_PATH), readConfigFile(projectConfigPath));
 
   cachedConfig = normalizeJudgmentConfig(
     deepMerge(DEFAULT_CONFIG, merged as Partial<JevControlConfig> & Record<string, unknown>),
   );
+  cachedConfigStamp = stamp;
   return cachedConfig!
 }
 
@@ -199,6 +211,7 @@ function deepMerge<T>(
  */
 export function invalidateConfig(): void {
   cachedConfig = null;
+  cachedConfigStamp = "";
 }
 
 /**

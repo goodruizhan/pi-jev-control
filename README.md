@@ -139,7 +139,9 @@ Create `~/.pi/agent/jev-control.json`:
   "router": {
     "enabled": true,
     "confidenceThreshold": 0.70,
+    "cheapConfidenceThreshold": 0.85,
     "fallbackTier": "medium",
+    "routerFailureTier": "medium",
     "mode": "set-model",
     "models": {
       "cheap": {
@@ -227,7 +229,11 @@ Create `~/.pi/agent/jev-control.json`:
 
 Project-level config override: `<project>/.pi/jev-control.json` (overrides global).
 
-Each `router.models` tier accepts either the legacy single object or an ordered candidate array. `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; Pi maps or clamps the requested level to the selected model's supported levels. Candidate fallback covers missing models and unavailable authentication, not 429/network failures after a model request has started.
+Each `router.models` tier accepts either the legacy single object or an ordered candidate array. `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; Pi maps or clamps the requested level to the selected model's supported levels. If every candidate in a tier fails, routing tries higher tiers. It never falls downward or retries a model API request that has already started.
+
+Routing includes recent conversation, tool activity, failures, and deterministic risk features. Risk rules set a minimum tier; `cheapConfidenceThreshold` adds a stricter threshold for cheap, with a 0.95 minimum for self-reported or similarity confidence. These thresholds still need evaluation on real tasks. If judgment is unavailable or fails, `routerFailureTier` is used instead of retaining the previous model. Short confirmations inherit the current task tier. Long inputs preserve both the beginning and final constraints while risk extraction scans the full input. Tool results can upgrade the model for later steps after multiple file changes or repeated failures.
+
+Prefix an input with `[cheap]`, `[medium]`, or `[strong]` to force its initial tier; newly observed tool risk may still upgrade it. `/jev route strong` sets the next substantive input's initial tier. `/jev last` shows raw judgment, requested tier, actual model, and switch outcome. The last 50 structured route records remain in process memory and are written to Pi's console log. Config file changes are detected on the next read; source changes require reloading the extension. A Git-installed Pi copy is separate from this development checkout and must be updated before the changes run there.
 
 ### Judgment backends
 
@@ -338,6 +344,7 @@ In `enforce` mode, `confirmOnLowConfidence` controls low-confidence prompts. Set
 - `/jev stats` — Show API usage statistics
 - `/jev savings` — Show estimated savings (v0.3)
 - `/jev last` — Show last routing decision
+- `/jev route cheap|medium|strong` — Set the next substantive input's initial tier
 - `/jev language en|zh-CN` — Switch and persist the UI language
 - `/jev router on|off` — Toggle Task Router
 - `/jev toolgate on|off` — Toggle Tool Gate

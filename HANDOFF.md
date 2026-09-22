@@ -16,7 +16,7 @@
 |---|---|
 | 版本 | 0.9.0 |
 | 基线提交 | v0.9.0 提交以 `git log -1` 为准 |
-| 测试 | 76/76 通过（`npm test`） |
+| 测试 | 82/82 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
 
@@ -69,7 +69,7 @@ interface JudgmentBackend {
 
 ### 置信度语义
 
-- `calibrated`：Jev 原生概率。0.8 就是 0.8。
+- `calibrated`：Jev 原生概率；对本项目任务路由的正确率仍需用专属数据集检验，不能把 0.8 当作正确率保证。
 - `self-reported`：小模型自报的置信度，**未校准**。阈值应对这类后端更保守。
 - 这个字段是给上层区分对待用的，别糊弄着都填 `calibrated`。
 

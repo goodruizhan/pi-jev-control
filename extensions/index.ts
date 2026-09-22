@@ -7,7 +7,7 @@ import { resetStats, formatStats } from "../src/stats/stats.js";
 import { resetSavings, formatSavings } from "../src/stats/savings.js";
 import { isJudgeAvailable, getJudgeUnavailableReason, judge } from "../src/judge/facade.js";
 import { allConfiguredBackends } from "../src/judge/registry.js";
-import { setupTaskRouter } from "../src/router/task-router.js";
+import { setNextRouteOverride, setupTaskRouter } from "../src/router/task-router.js";
 import { modelCandidates } from "../src/router/model-router.js";
 import { setupToolGate } from "../src/gates/tool-gate.js";
 import { setupFailureClassifier } from "../src/judgment/failure-classifier.js";
@@ -145,14 +145,25 @@ export default function (pi: ExtensionAPI) {
       // /jev last — show last routing decision
       if (arg === "last") {
         const state = runtimeState;
-        if (state.lastDecision) {
+        if (state.lastRouteAudit) {
+          const audit = state.lastRouteAudit;
           ctx.ui.notify(tr(
-            `Last decision: ${state.lastDecision.type} = ${state.lastDecision.value}\nconfidence: ${state.lastDecision.confidence?.toFixed(2) ?? "N/A"}\ntime: ${new Date(state.lastDecision.timestamp).toLocaleTimeString()}`,
-            `上次决策：${state.lastDecision.type} = ${state.lastDecision.value}\n置信度：${state.lastDecision.confidence?.toFixed(2) ?? "无"}\n时间：${new Date(state.lastDecision.timestamp).toLocaleTimeString()}`,
+            `Last route: ${audit.success ? "success" : "failed"}\nraw: ${audit.rawChoice} (${audit.rawConfidence.toFixed(2)})\nrequested: ${audit.requestedTier}; effective: ${audit.effectiveTier ?? "none"}\nmodel: ${audit.provider ?? "?"}/${audit.model ?? "?"}; thinking: ${audit.thinking ?? "?"}\nsource: ${audit.source}; reason: ${audit.reason ?? "none"}\ntime: ${new Date(audit.timestamp).toLocaleTimeString()}`,
+            `上次路由：${audit.success ? "成功" : "失败"}\n原始判断：${audit.rawChoice}（${audit.rawConfidence.toFixed(2)}）\n请求等级：${audit.requestedTier}；实际等级：${audit.effectiveTier ?? "无"}\n模型：${audit.provider ?? "?"}/${audit.model ?? "?"}；思考等级：${audit.thinking ?? "?"}\n来源：${audit.source}；原因：${audit.reason ?? "无"}\n时间：${new Date(audit.timestamp).toLocaleTimeString()}`,
           ), "info");
         } else {
           ctx.ui.notify(tr("No routing decision recorded yet.", "尚未记录路由决策。"), "info");
         }
+        return;
+      }
+
+      if (/^route (cheap|medium|strong)$/.test(arg)) {
+        const tier = arg.split(" ")[1] as "cheap" | "medium" | "strong";
+        setNextRouteOverride(tier);
+        ctx.ui.notify(tr(
+          `Next substantive input will use ${tier} tier.`,
+          `下一条实质性输入将使用 ${tier} 等级。`,
+        ), "info");
         return;
       }
 
@@ -329,8 +340,8 @@ export default function (pi: ExtensionAPI) {
       // Unknown subcommand
       ctx.ui.notify(
         tr(
-          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, language en|zh-CN, toolgate advisory|enforce|on|off, router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, compact on|off|status|plan|clear, reset`,
-          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、language en|zh-CN、toolgate advisory|enforce|on|off、router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、compact on|off|status|plan|clear、reset`,
+          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, route cheap|medium|strong, language en|zh-CN, toolgate advisory|enforce|on|off, router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, compact on|off|status|plan|clear, reset`,
+          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、route cheap|medium|strong、language en|zh-CN、toolgate advisory|enforce|on|off、router/retry/contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、compact on|off|status|plan|clear、reset`,
         ),
         "info",
       );

@@ -4,6 +4,16 @@ import type { ModelRouteSpec, ModelSpec, TaskTier } from "../types.js";
 import { tr } from "../i18n.js";
 import { notifyAutomatic } from "../ui.js";
 
+export interface ModelRouteResult {
+  success: boolean;
+  tier: TaskTier;
+  provider?: string;
+  model?: string;
+  thinking?: string;
+  candidateIndex?: number;
+  reason?: string;
+}
+
 /** Normalize a legacy single target or an ordered target list. */
 export function modelCandidates(route: ModelRouteSpec | undefined): ModelSpec[] {
   if (!route) return [];
@@ -36,32 +46,47 @@ export async function routeModel(
   ctx: ExtensionContext,
   tier: TaskTier,
 ): Promise<boolean> {
+  return (await routeModelDetailed(pi, ctx, tier)).success;
+}
+
+export async function routeModelDetailed(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  tier: TaskTier,
+): Promise<ModelRouteResult> {
   const config = loadConfig();
 
-  if (!config.enabled || !config.router.enabled) return false;
+  if (!config.enabled || !config.router.enabled) return { success: false, tier, reason: "router disabled" };
 
   if (config.router.mode === "tier-only") {
-    return true;
+    return { success: true, tier, provider: ctx.model?.provider, model: ctx.model?.id, thinking: pi.getThinkingLevel?.() };
   }
 
   const requestedTier = tier === "unknown" ? config.router.fallbackTier : tier;
   const effectiveTier = requestedTier === "cheap" || requestedTier === "medium" || requestedTier === "strong"
     ? requestedTier
     : "medium";
-  const candidates = modelCandidates(config.router.models[effectiveTier]).filter(isConfiguredModelSpec);
+  // A missing or unavailable low-tier model may fall upward, never downward.
+  const tiers: Array<"cheap" | "medium" | "strong"> = effectiveTier === "cheap"
+    ? ["cheap", "medium", "strong"]
+    : effectiveTier === "medium" ? ["medium", "strong"] : ["strong"];
+  const candidates = tiers.flatMap((candidateTier) =>
+    modelCandidates(config.router.models[candidateTier]).filter(isConfiguredModelSpec)
+      .map((spec) => ({ spec, candidateTier })),
+  );
 
   if (candidates.length === 0) {
     notifyAutomatic(ctx, tr(
       `No model configured for tier "${effectiveTier}"`,
       `等级“${effectiveTier}”未配置模型`,
     ), "error");
-    return false;
+    return { success: false, tier: effectiveTier, reason: "no configured model" };
   }
 
   const failures: string[] = [];
 
   for (let index = 0; index < candidates.length; index += 1) {
-    const spec = candidates[index];
+    const { spec, candidateTier } = candidates[index];
     const model = ctx.modelRegistry.find(spec.provider, spec.model);
 
     if (!model) {
@@ -96,7 +121,9 @@ export async function routeModel(
       }
     }
 
-    if (isCurrentModel && !spec.thinking) return true;
+    if (isCurrentModel && !spec.thinking) {
+      return { success: true, tier: candidateTier, provider: spec.provider, model: spec.model, thinking: pi.getThinkingLevel?.(), candidateIndex: index };
+    }
 
     const fallbackNote = index > 0
       ? tr(` (fallback candidate ${index + 1})`, `（回退候选 ${index + 1}）`)
@@ -111,15 +138,19 @@ export async function routeModel(
       : "";
 
     notifyAutomatic(ctx, tr(
-      `Switched to ${spec.provider}/${spec.model}${thinkingNote} for ${effectiveTier} task${fallbackNote}`,
-      `已为 ${effectiveTier} 任务切换到 ${spec.provider}/${spec.model}${thinkingNote}${fallbackNote}`,
+      `Switched to ${spec.provider}/${spec.model}${thinkingNote} for ${candidateTier} task${fallbackNote}`,
+      `已为 ${candidateTier} 任务切换到 ${spec.provider}/${spec.model}${thinkingNote}${fallbackNote}`,
     ), actualThinking && spec.thinking && actualThinking !== spec.thinking ? "warning" : "info");
-    return true;
+    return {
+      success: true, tier: candidateTier, provider: spec.provider, model: spec.model,
+      thinking: actualThinking ?? pi.getThinkingLevel?.(), candidateIndex: index,
+      reason: candidateTier !== effectiveTier ? `upward fallback from ${effectiveTier}` : undefined,
+    };
   }
 
   notifyAutomatic(ctx, tr(
     `No available model for tier "${effectiveTier}". Tried: ${failures.join("; ")}`,
     `等级“${effectiveTier}”没有可用模型。已尝试：${failures.join("；")}`,
   ), "error");
-  return false;
+  return { success: false, tier: effectiveTier, reason: failures.join("; ") };
 }

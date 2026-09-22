@@ -75,6 +75,37 @@ export interface RouterResult {
   rawConfidence: number;
   latencyMs: number;
   timestamp: number;
+  source?: "judge" | "override" | "fallback" | "risk-floor";
+  reason?: string;
+  backend?: string;
+  riskFeatures?: string[];
+  judgeModel?: string;
+  confidenceKind?: string;
+  probabilities?: Record<string, number>;
+}
+
+export interface RouteAudit {
+  requestId: number;
+  taskFingerprint?: string;
+  startedAt?: number;
+  timestamp: number;
+  source: string;
+  rawChoice: string;
+  rawConfidence: number;
+  requestedTier: TaskTier;
+  effectiveTier?: TaskTier;
+  provider?: string;
+  model?: string;
+  thinking?: string;
+  candidateIndex?: number;
+  success: boolean;
+  reason?: string;
+  backend?: string;
+  judgeModel?: string;
+  confidenceKind?: string;
+  probabilities?: Record<string, number>;
+  latencyMs: number;
+  riskFeatures: string[];
 }
 
 // ── Failure Record ──────────────────────────────────────────────────────
@@ -105,6 +136,8 @@ export interface RuntimeState {
     confidence?: number;
     timestamp: number;
   };
+  lastRouteAudit?: RouteAudit;
+  routeAudits: RouteAudit[];
   recentFailures: FailureRecord[];
   approvedActionKeys: Set<string>;
 }
@@ -154,6 +187,8 @@ export interface JevControlConfig {
     enabled: boolean;
     confidenceThreshold: number;
     fallbackTier: TaskTier;
+    routerFailureTier: "medium" | "strong";
+    cheapConfidenceThreshold: number;
     mode: "set-model" | "tier-only";
     models: {
       cheap: ModelRouteSpec;

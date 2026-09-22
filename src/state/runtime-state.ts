@@ -4,6 +4,7 @@ const MAX_FAILURE_RECORDS = 50;
 
 /** Singleton runtime state — shared across all modules */
 export const runtimeState: RuntimeState = {
+  routeAudits: [],
   recentFailures: [],
   approvedActionKeys: new Set<string>(),
 };
@@ -105,6 +106,8 @@ export function resetState(): void {
   runtimeState.lastTaskConfidence = undefined;
   runtimeState.lastJevModel = undefined;
   runtimeState.lastDecision = undefined;
+  runtimeState.lastRouteAudit = undefined;
+  runtimeState.routeAudits = [];
   runtimeState.recentFailures = [];
   runtimeState.approvedActionKeys.clear();
 }

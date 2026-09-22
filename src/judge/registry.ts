@@ -12,6 +12,7 @@ import { EmbeddingBackend } from "./embedding-backend.js";
 import { RulesBackend } from "./rules-backend.js";
 
 const instances = new Map<string, JudgmentBackend>();
+let instancesConfig: JudgmentConfig | undefined;
 
 function createBackend(name: string, config: JudgmentBackendConfig): JudgmentBackend | null {
   switch (config.type) {
@@ -48,10 +49,15 @@ function createBackend(name: string, config: JudgmentBackendConfig): JudgmentBac
 }
 
 function getBackend(name: string): JudgmentBackend | null {
+  const currentConfig = loadConfig().judgment;
+  if (instancesConfig !== currentConfig) {
+    instances.clear();
+    instancesConfig = currentConfig;
+  }
   const cached = instances.get(name);
   if (cached) return cached;
 
-  const config = loadConfig().judgment.backends[name];
+  const config = currentConfig.backends[name];
   if (!config) return null;
 
   const backend = createBackend(name, config);
@@ -124,4 +130,5 @@ function unreachableDefault(): JudgmentBackend {
 /** Drop all cached backend instances (call after config reload / in tests). */
 export function resetJudgeBackends(): void {
   instances.clear();
+  instancesConfig = undefined;
 }

@@ -8,7 +8,7 @@ import { choice, noul } from "./ir.js";
 // ── Task Router ────────────────────────────────────────────────────────
 
 export const TASK_TIER_QUESTION = choice(
-  "Choose the best complexity tier for this task: cheap (search/grep/read/mechanical changes), medium (standard coding/debug), strong (crash root cause/GAS/GC/multithreading/engine internals), or unknown (insufficient information).",
+  "Choose the minimum capable model tier for the whole task, including recent conversation, tool failures, files, and delivery constraints in state. cheap: bounded read/search or one mechanical edit with no build or meaningful risk. medium: normal implementation/debugging, multiple files, assets, build or tests. strong: architecture or cross-module changes, engine internals, GAS/GC/threads/replication, crash root cause, high-impact refactor, or detailed final review. unknown: insufficient information. Do not treat confidence as proof that the selected tier is safe.",
   {
     cheap: null,
     medium: null,
