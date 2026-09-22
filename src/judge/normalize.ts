@@ -18,6 +18,26 @@ export function normalizeTaskTier(choice: string): TaskTier {
   return "unknown";
 }
 
+/** Multi-word variants that Jev or a model tends to emit but that are not valid labels. */
+const FAILURE_TYPE_ALIASES: Record<string, FailureType> = {
+  rate_limit: "rate_limited",
+  rate_limited_error: "rate_limited",
+  network_error: "network",
+  network_failure: "network",
+  network_unavailable: "network",
+  connection_error: "network",
+  connection_refused: "network",
+  timeout_error: "timeout",
+  request_timeout: "timeout",
+  auth_error: "authentication",
+  auth_failed: "authentication",
+  authentication_error: "authentication",
+  permission_denied: "permission",
+  access_denied: "permission",
+  invalid_input_error: "invalid_input",
+  repeated_failure: "repeated",
+};
+
 /**
  * Normalize a Jev choice to a valid FailureType.
  */
@@ -29,7 +49,14 @@ export function normalizeFailureType(choice: string): FailureType {
     "configuration", "permission", "environment", "invalid_input",
     "repeated", "unknown",
   ];
-  return valid.includes(lower as FailureType) ? (lower as FailureType) : "unknown";
+  if (valid.includes(lower as FailureType)) return lower as FailureType;
+  const aliased = FAILURE_TYPE_ALIASES[lower];
+  if (aliased) return aliased;
+  // Last resort: "network error" is not a label, but its first word still
+  // identifies the class. Collapsing these to "unknown" throws away information
+  // the caller already supplied, and the classifier then cannot learn anything.
+  const first = lower.split("_")[0];
+  return valid.includes(first as FailureType) ? (first as FailureType) : "unknown";
 }
 
 /**

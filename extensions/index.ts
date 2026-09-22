@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, getConfigPath, saveLanguage } from "../src/config.js";
 import { normalizeLanguage, onOff, tr, trFor } from "../src/i18n.js";
 import { PLUGIN_VERSION } from "../src/version.js";
+import { ROUTER_MODES, isRouterMode } from "../src/types.js";
 import { runtimeState, resetState } from "../src/state/runtime-state.js";
 import { resetStats, formatStats } from "../src/stats/stats.js";
 import { resetSavings, formatSavings } from "../src/stats/savings.js";
@@ -199,18 +200,17 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // /jev router mode <rules-only|advisory|set-model|off>
+      // /jev router mode <rules-only|advisory|tier-only|set-model|off>
       if (arg.startsWith("router mode ")) {
         const mode = arg.slice("router mode ".length).trim();
-        const modes = ["rules-only", "advisory", "set-model", "off"];
-        if (!modes.includes(mode)) {
+        if (!isRouterMode(mode)) {
           ctx.ui.notify(tr(
-            `Usage: /jev router mode ${modes.join("|")}`,
-            `用法：/jev router mode ${modes.join("|")}`,
+            `Usage: /jev router mode ${ROUTER_MODES.join("|")}`,
+            `用法：/jev router mode ${ROUTER_MODES.join("|")}`,
           ), "warning");
           return;
         }
-        config.router.mode = mode as "rules-only" | "advisory" | "set-model" | "off";
+        config.router.mode = mode;
         ctx.ui.notify(tr(`Router mode: ${mode}`, `路由模式：${mode}`), "info");
         ctx.ui.notify(tr("Note: Use /reload for persistent changes.", "注意：如需持久化，请修改配置后使用 /reload。"), "info");
         return;

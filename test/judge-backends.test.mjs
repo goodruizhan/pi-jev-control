@@ -6,6 +6,7 @@ import { resolveBackend, resolveFallback, allConfiguredBackends, resetJudgeBacke
 import { OpenAiCompatibleBackend } from "../dist/src/judge/openai-backend.js";
 import { choice, noul, score } from "../dist/src/judge/ir.js";
 import { isJudgeAvailable, judge } from "../dist/src/judge/facade.js";
+import { normalizeFailureType } from "../dist/src/judge/normalize.js";
 
 // ── Config backward compatibility ───────────────────────────────────────
 
@@ -319,4 +320,36 @@ test("registry instantiates embedding backends from config", () => {
   assert.equal(backend.isAvailable(), true);
   delete config.judgment.backends["emb-test"];
   resetJudgeBackends();
+});
+
+// ── Failure type normalization ───────────────────────────────────────────
+
+test("normalizeFailureType keeps valid labels and resolves multi-word variants", () => {
+  // "network error" normalised to "network_error", which is not a valid label,
+  // so every multi-word answer Jev produced collapsed to "unknown" and the
+  // classifier could not learn anything from it.
+  for (const [input, expected] of [
+    ["network error", "network"],
+    ["Network Error", "network"],
+    ["connection refused", "network"],
+    ["rate limit", "rate_limited"],
+    ["timeout error", "timeout"],
+    ["permission denied", "permission"],
+    ["invalid input", "invalid_input"],
+    ["repeated failure", "repeated"],
+    ["authentication error", "authentication"],
+  ]) {
+    assert.equal(normalizeFailureType(input), expected, `expected ${input} -> ${expected}`);
+  }
+
+  // Valid labels are returned unchanged, including after whitespace collapse.
+  for (const input of ["timeout", "  Timeout  ", "NETWORK", "code_error", "unknown"]) {
+    const expected = input.toLowerCase().trim();
+    assert.equal(normalizeFailureType(input), expected);
+  }
+
+  // Nothing recognisable still degrades to unknown rather than inventing a label.
+  for (const input of ["garbled output", "", "  ", "segfault in renderer", "404 on /foo"]) {
+    assert.equal(normalizeFailureType(input), "unknown", `expected ${input} -> unknown`);
+  }
 });

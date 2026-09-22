@@ -10,7 +10,7 @@ import { setupContextHook } from "../dist/src/compaction/context-hook.js";
 import { addMemory } from "../dist/src/memory/memory-add.js";
 import { clearAllMemory, getMemoryCount } from "../dist/src/memory/store.js";
 import { assessRisk } from "../dist/src/gates/assess-risk.js";
-import { diagnoseFailure } from "../dist/src/judgment/diagnose-failure.js";
+import { diagnoseFailure, parseFailureCount } from "../dist/src/judgment/diagnose-failure.js";
 import { assessTask } from "../dist/src/router/assess-task.js";
 import { judgeTaskTier } from "../dist/src/router/task-router.js";
 import { applyThresholdFallback } from "../dist/src/judge/rank.js";
@@ -518,4 +518,27 @@ test("skill exclusion: a lookalike phrase does not exclude", () => {
     isSkillRelevant("不涉及蓝色主题", SKILL_NAME, SKILL_DESC, 0.95, 0.4),
     true,
   );
+});
+
+
+test("diagnose failure: a model-supplied count is coerced, not dropped", () => {
+  // The tool declared sameFailureCount as a number, but the model is not bound
+  // by the schema. Anything that was not strictly a number used to become 0,
+  // which silently disabled the repeated-failure rule.
+  for (const [input, expected] of [
+    ["3", 3],
+    ["0.9", 0],
+    ["  5  ", 5],
+    [3, 3],
+    [0, 0],
+    [-2, 0],
+    [Number.NaN, 0],
+    [Number.POSITIVE_INFINITY, 0],
+    ["abc", 0],
+    ["", 0],
+    [null, 0],
+    [undefined, 0],
+  ]) {
+    assert.equal(parseFailureCount(input), expected, `expected ${String(input)} -> ${expected}`);
+  }
 });

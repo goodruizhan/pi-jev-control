@@ -115,7 +115,9 @@ export function setupMemoryAddTool(pi: ExtensionAPI): void {
       const type = String(params.type ?? "").slice(0, 40);
       const summary = String(params.summary ?? "").slice(0, 2000);
       const rawExcerpt = typeof params.rawExcerpt === "string" ? params.rawExcerpt.slice(0, 2000) : undefined;
-      const confidence = typeof params.confidence === "number" ? params.confidence : undefined;
+      // The model is not bound by the declared schema, so a string "0.9" is
+      // possible. addMemory() clamps and defaults non-finite values.
+      const confidence = params.confidence === undefined ? undefined : Number(params.confidence);
 
       const result = await addMemory({ type, summary, rawExcerpt, confidence });
 

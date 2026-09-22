@@ -35,27 +35,37 @@ export interface DiagnoseFailureResult {
   latencyMs?: number;
 }
 
+/** Coerce a model-supplied failure count; anything unusable is zero. */
+export function parseFailureCount(value: number | string | null | undefined): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
 export async function diagnoseFailure(
   tool: string,
   error: string,
   input?: string,
-  sameFailureCount = 0,
+  sameFailureCount: number | string = 0,
   signal?: AbortSignal,
 ): Promise<DiagnoseFailureResult> {
+  // The model is not bound by the declared schema, so a string "3" is possible.
+  // Treating anything but a number as 0 disabled the repeated-failure rule
+  // silently — the one signal this tool should be most sure about.
+  const count = parseFailureCount(sameFailureCount);
   const config = loadConfig();
   if (!config.enabled) {
     return { status: "disabled", confidence: 0 };
   }
 
   // ── Deterministic: repeated-failure rule outranks any model ─────────
-  const repeat = evaluateRepeatedFailure(sameFailureCount);
+  const repeat = evaluateRepeatedFailure(count);
   if (repeat) {
     return {
       status: "ok",
       failureType: "repeated",
       recommendedAction: "do_not_retry",
       confidence: repeat.confidence,
-      deterministic: { source: "local-rule", sameFailureCount, reason: repeat.reason },
+      deterministic: { source: "local-rule", sameFailureCount: count, reason: repeat.reason },
     };
   }
 
@@ -69,7 +79,7 @@ export async function diagnoseFailure(
       input_summary: (input ?? "").slice(0, 2000),
       error_excerpt: error.slice(0, 2000),
       command_category: "",
-      same_failure_count: sameFailureCount,
+      same_failure_count: count,
     },
     { type: FAILURE_TYPE_QUESTION, action: RECOMMENDED_ACTION_QUESTION },
     { module: "failureJudge", signal },
@@ -117,7 +127,7 @@ export function setupDiagnoseFailureTool(pi: ExtensionAPI): void {
       const tool = String(params.tool ?? "").slice(0, 120);
       const error = String(params.error ?? "").slice(0, 2000);
       const input = typeof params.input === "string" ? params.input.slice(0, 2000) : undefined;
-      const count = typeof params.sameFailureCount === "number" ? params.sameFailureCount : 0;
+      const count = (params.sameFailureCount as number | string | undefined) ?? 0;
 
       const result = await diagnoseFailure(tool, error, input, count, signal);
 

@@ -3,8 +3,10 @@ import type { JevControlConfig } from "./types.js";
 
 export type Language = JevControlConfig["language"];
 
+/** True for every alias normalizeLanguage() accepts, so a config file that says
+ * "cn" or "chinese" cannot silently fall back to English. */
 export function isChinese(language: string | undefined): boolean {
-  return language?.toLowerCase() === "zh-cn" || language?.toLowerCase() === "zh";
+  return normalizeLanguage(language) === "zh-CN";
 }
 
 export function normalizeLanguage(language: string | undefined): Language | null {

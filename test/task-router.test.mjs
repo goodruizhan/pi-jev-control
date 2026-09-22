@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadConfig, resetConfigToDefaults } from "../dist/src/config.js";
+import { ROUTER_MODES, isRouterMode } from "../dist/src/types.js";
 import { resetJudgeBackends } from "../dist/src/judge/registry.js";
 import {
   judgeTaskTier,
@@ -60,6 +61,16 @@ test("mode helpers describe who may decide and who may switch", () => {
   assert.equal(modeConsultsJudge("tier-only"), true);
   assert.equal(modeConsultsJudge("rules-only"), false);
   assert.equal(modeConsultsJudge("off"), false);
+
+  // The command /jev router mode used to accept only four of the five modes the
+  // config type allows, so "tier-only" could be set by editing the file but not
+  // by the command. Everything derives from ROUTER_MODES now.
+  for (const mode of ROUTER_MODES) {
+    assert.equal(isRouterMode(mode), true, `${mode} should be accepted`);
+  }
+  for (const bogus of ["advise", "TIER-ONLY", "set_models", "", "rules_only", "model"]) {
+    assert.equal(isRouterMode(bogus), false, `${bogus} should be rejected`);
+  }
 
   assert.equal(readInlineOverride("[strong] refactor GAS replication"), "strong");
   assert.equal(readInlineOverride("  [cheap] fix typo"), "cheap");
@@ -410,4 +421,35 @@ test("advisory mode records a judgment but never switches the model", async () =
     resetJudgeBackends();
     resetState();
   }
+});
+
+
+test("tool_result escalation respects router.enabled", async () => {
+  // Before the fix the handler only checked mode !== "set-model" and relied on
+  // runtimeState.lastTaskTier being unset when the router was off. That held
+  // only because routeTask() returns null, so it was a property of another code
+  // path rather than a deliberate guard.
+  resetConfigToDefaults();
+  resetState();
+  const config = loadConfig();
+  config.router.enabled = false;
+  config.router.mode = "set-model";
+
+  const handlers = new Map();
+  setupTaskRouter({ on: (name, fn) => handlers.set(name, fn), registerTool: () => {} });
+  const ctx = { ui: { notify: () => {} } };
+
+  // Advance the request counter; the router is off, so nothing is routed.
+  await handlers.get("input")({ text: "investigate a replication bug in the inventory component", source: "user" }, ctx);
+  // Pretend an earlier round established a tier — the case the old handler fell through on.
+  runtimeState.lastTaskTier = "cheap";
+  const auditsBefore = runtimeState.routeAudits.length;
+
+  await handlers.get("tool_result")(
+    { isError: true, toolName: "bash", input: { command: "kubectl delete pod web-1 --force" } },
+    ctx,
+  );
+
+  assert.equal(runtimeState.routeAudits.length, auditsBefore, "no escalation audit may be recorded");
+  assert.equal(runtimeState.lastTaskTier, "cheap", "the tier must stay untouched");
 });

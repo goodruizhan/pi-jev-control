@@ -175,6 +175,21 @@ export interface JevStats {
 
 // ── Configuration ───────────────────────────────────────────────────────
 
+/**
+ * Every router mode the config accepts. The union in JevControlConfig is the
+ * type-level truth; this list keeps the `/jev router mode` validator and the
+ * README from drifting apart. "tier-only" used to be accepted by the config
+ * type and rejected by the command.
+ */
+export const ROUTER_MODES = ["rules-only", "advisory", "tier-only", "set-model", "off"] as const;
+
+export type RouterMode = (typeof ROUTER_MODES)[number];
+
+/** True for any string the router accepts, so callers need no cast. */
+export function isRouterMode(value: string): value is RouterMode {
+  return (ROUTER_MODES as readonly string[]).includes(value);
+}
+
 export interface JevControlConfig {
   enabled: boolean;
   language: "en" | "zh-CN";
@@ -210,7 +225,7 @@ export interface JevControlConfig {
      * - "set-model" — legacy: Jev infers the tier and the model is switched.
      * - "off" — routing disabled entirely.
      */
-    mode: "rules-only" | "advisory" | "set-model" | "tier-only" | "off";
+    mode: RouterMode;
     models: {
       cheap: ModelRouteSpec;
       medium: ModelRouteSpec;

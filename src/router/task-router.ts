@@ -386,7 +386,12 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
   pi.on("tool_result", async (event, ctx) => {
     // Automatic escalation belongs to the legacy set-model mode. In rules-only mode
     // the model reads the tool results itself and asks for an upgrade when it wants one.
-    if (loadConfig().router.mode !== "set-model") return;
+    const router = loadConfig().router;
+    // router.enabled was not checked here. The handler used to lean on
+    // runtimeState.lastTaskTier being unset to stop, which happens to hold today
+    // but is a property of another code path rather than a deliberate guard, and
+    // it would let the accounting below run on every tool result for no purpose.
+    if (!router.enabled || router.mode !== "set-model") return;
     const id = requestId;
     if (!id || !runtimeState.lastTaskTier) return;
     if (event.isError) toolFailures += 1;

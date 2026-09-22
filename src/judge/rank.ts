@@ -265,8 +265,10 @@ export function setupRankTool(pi: ExtensionAPI): void {
         if (!id) return [];
         return [{ id, text: typeof item.text === "string" ? item.text.slice(0, 2000) : "" }];
       });
-      const limit = typeof params.limit === "number" ? params.limit : undefined;
-      const threshold = typeof params.threshold === "number" ? params.threshold : undefined;
+      // The model is not bound by the declared schema, so a string "3" is possible.
+      // clampNumber() below turns a non-finite value back into the default.
+      const limit = params.limit === undefined ? undefined : Number(params.limit);
+      const threshold = params.threshold === undefined ? undefined : Number(params.threshold);
 
       const result = await rankCandidates(query, candidates, { limit, threshold }, signal, "rank");
 

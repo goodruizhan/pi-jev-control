@@ -39,20 +39,6 @@ export function recordFailure(record: Omit<FailureRecord, "count" | "firstTimest
 }
 
 /**
- * Get the failure record matching a signature, if any.
- */
-export function findFailureBySignature(signature: string): FailureRecord | undefined {
-  return runtimeState.recentFailures.find((f) => f.signature === signature);
-}
-
-/**
- * Get failure count for a given tool + normalized input signature.
- */
-export function getFailureCountBySignature(signature: string): number {
-  return runtimeState.recentFailures.find((f) => f.signature === signature)?.count ?? 0;
-}
-
-/**
  * Get the total failure count for a given tool + input prefix.
  * Used for pre-call repeated failure check (before we know the error).
  */

@@ -252,14 +252,29 @@ export function getConfigPath(): string {
 
 /** Persist the UI language in the global Jev Control config. */
 export function saveLanguage(language: JevControlConfig["language"]): void {
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+
   let config: Record<string, unknown> = {};
   try {
     config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
-  } catch {
-    // Missing or invalid config: create a minimal valid file.
+    if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("expected a JSON object");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      // Refuse rather than overwrite: readConfigFile() already warned that this
+      // file is broken, and a user seeing that warning would naturally try to
+      // repair it through /jev language. Writing here would silently erase their
+      // config instead.
+      console.warn(
+        `[pi-jev-control] Invalid config ${CONFIG_PATH}: ` +
+        `${error instanceof Error ? error.message : String(error)}. Refusing to save the language ` +
+        "because that would overwrite it. Fix the file first.",
+      );
+      cachedConfig = null;
+      return;
+    }
   }
 
-  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, `${JSON.stringify({ ...config, language }, null, 2)}\n`, "utf-8");
   cachedConfig = null;
 }
