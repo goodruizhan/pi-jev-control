@@ -97,8 +97,25 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 - **Memory Gate** — User input analysis, constraint/decision/failure detection
 - **Memory Store** — Local JSONL persistence (`~/.pi/agent/jev-control-data/`)
 - **Memory Search** (`jev_memory_search`) — Local filter + Jev relevance ranking
+- **Model-asked tools** (`jev_assess_task`, `jev_assess_risk`, `jev_diagnose_failure`, `jev_request_model_tier`, `jev_prune_context`, `jev_memory_add`, `jev_rank`) — Jev asked on demand, never automatic
 - **Stats** — Track Jev API usage across all modules
 - **Project config override** — `.pi/jev-control.json` overrides global config
+
+## Control direction
+
+Since v1.0.0 the plugin is inverted: **the model calls Jev, Jev never calls the model**.
+Nothing changes your model, prunes your context, blocks your tools, or writes to memory
+unless you — the model — ask for it through a `jev_*` tool. Jev never blocks a tool call,
+only appends information to a tool result. Deterministic rules remain the safety floor and
+never ask a model for permission.
+
+The seven tools that implement this are `jev_assess_task`, `jev_assess_risk`,
+`jev_diagnose_failure`, `jev_request_model_tier`, `jev_prune_context`, `jev_memory_add`,
+and `jev_rank`. A bundled skill at `skills/pi-jev-control/SKILL.md` explains when to use
+each one.
+
+Enable `router.mode: "set-model"` or `"tier-only"` if you want routing back on, and
+`compaction.autoMode: "suggest"` or `"auto"` if you want pruning back on.
 
 ## v0.1 Features
 
@@ -142,7 +159,7 @@ Create `~/.pi/agent/jev-control.json`:
     "cheapConfidenceThreshold": 0.85,
     "fallbackTier": "medium",
     "routerFailureTier": "medium",
-    "mode": "set-model",
+    "mode": "rules-only",
     "models": {
       "cheap": {
         "provider": "openai-codex",
@@ -181,7 +198,7 @@ Create `~/.pi/agent/jev-control.json`:
     "maxSameFailureRetries": 2,
     "timeoutMs": 2500,
     "skipBenignExitCodes": true,
-    "appendToResult": true
+    "appendToResult": false
   },
   "contextGate": {
     "enabled": true,
@@ -198,10 +215,12 @@ Create `~/.pi/agent/jev-control.json`:
     "enabled": true
   },
   "memoryGate": {
-    "enabled": true
+    "enabled": false,
+    "mode": "suggest"
   },
   "compaction": {
     "enabled": true,
+    "autoMode": "off",
     "preserveRecentMessages": 8,
     "minCharsToSave": 8000,
     "minTurnsBetweenPlans": 20
@@ -228,6 +247,21 @@ Create `~/.pi/agent/jev-control.json`:
 ```
 
 Project-level config override: `<project>/.pi/jev-control.json` (overrides global).
+
+`router.mode` is the only thing that makes routing happen: `rules-only` (default) and
+`off` compute a tier but never switch the model, `"tier-only"` computes a tier and never
+switches, `"set-model"` switches with Jev input and no Jev without, `"off"` disables the
+module. Only the model's own `jev_request_model_tier` call or a `/jev route <tier>`
+command can switch models while `router.mode` is `rules-only`.
+
+`memoryGate.mode` is `suggest` (default) or `auto`. `suggest` only notifies and never
+writes to memory; `auto` lets the gate write records to disk. Either way,
+`jev_memory_add` writes straight through — it does not pass through the gate.
+`memoryGate.enabled: false` disables the gate's detection entirely.
+
+`compaction.autoMode` is `off` (default), `suggest`, or `auto`. `off` and `suggest` never
+prune without the model calling `jev_prune_context`; `suggest` also notifies before
+applying. `auto` restores the pre-v1.0 automatic behavior.
 
 Each `router.models` tier accepts either the legacy single object or an ordered candidate array. `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; Pi maps or clamps the requested level to the selected model's supported levels. If every candidate in a tier fails, routing tries higher tiers. It never falls downward or retries a model API request that has already started.
 

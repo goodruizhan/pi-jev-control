@@ -1,2 +1,2 @@
 /** Keep in sync with package.json; the test suite enforces the match. */
-export const PLUGIN_VERSION = "0.9.0";
+export const PLUGIN_VERSION = "1.0.0";

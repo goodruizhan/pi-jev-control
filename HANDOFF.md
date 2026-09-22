@@ -14,13 +14,45 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 0.9.0 |
-| 基线提交 | v0.9.0 提交以 `git log -1` 为准 |
-| 测试 | 82/82 通过（`npm test`） |
+| 版本 | 1.0.0（架构反转完成） |
+| 基线提交 | v1.0.0 提交以 `git log -1` 为准 |
+| 测试 | 108/108 通过（`npm test`） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
-| 依赖 | 仅新增无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
+| 依赖 | 无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
+
+### 1.1 控制方向（v1.0.0 起，最重要的一条）
+
+**模型问 Jev，Jev 从不替模型做决定。** Jev 不切换模型、不剪 context、不阻塞工具调用、不自动写记忆——它只返回信息，模型自己做主。确定性规则是安全底线，从不问模型。
+
+实现方式是 7 个「模型主动问」的工具：
+
+| 工具 | 作用 | 代码 |
+|---|---|---|
+| `jev_assess_task` | 任务复杂度意见（cheap/medium/strong） | `src/router/assess-task.ts` |
+| `jev_assess_risk` | 操作风险 + 工具门 verdict | `src/gates/assess-risk.ts` |
+| `jev_diagnose_failure` | 失败根因 + 下一步建议 | `src/judgment/diagnose-failure.ts` |
+| `jev_request_model_tier` | 唯一能切模型的显式入口 | `src/router/model-tier.ts` |
+| `jev_prune_context` | 唯一的剪枝入口（需模型请求） | `src/compaction/prune-context.ts` |
+| `jev_memory_add` | 唯一写记忆的入口（无需过门） | `src/memory/memory-add.ts` |
+| `jev_rank` | 排序原语：词法预筛 + Jev 重排 | `src/judge/rank.ts` |
+
+配置默认值因此全部改了：`router.mode="rules-only"`、`compaction.autoMode="off"`、
+`memoryGate.enabled=false` + `mode="suggest"`、`retryJudge.appendToResult=false`。
+想恢复旧行为：`router.mode="set-model"`、`compaction.autoMode="auto"`。
+
+**配套技能**：`skills/pi-jev-control/SKILL.md` 教模型什么时候用哪个工具——计划里
+「决定成败的一环」，改这些工具的行为时必须同步更新它。
 
 **关键：改完插件代码后必须重启 pi 才生效**（插件在 pi 启动时加载）。
+
+### 1.2 测试与真实配置分离（踩过的坑）
+
+`loadConfig()` 有进程内缓存。**测试必须先调 `resetConfigToDefaults()` 再读配置**，
+否则读到的是用户机器的真实配置 `~/.pi/agent/jev-control.json`（那台机器上
+`router.mode` 是 `set-model`），旧测试就会莫名失败。这是 v0.9.0 遗留 10 个失败测试的
+根因，v1.0.0 已修：断言改成新默认值，测试本身保持 hermetic。
+
+**改 `src/config.ts` 时永远不要同时改 `resetConfigToDefaults()`**——它是测试的地基。
 
 **部署位置（易混淆）**：pi 加载的是安装包副本 `~/.pi/agent/git/github.com/goodruizhan/pi-jev-control`（直接加载 TS 源码，不需要 dist），**不是** `D:\Project\...` 开发副本。两者版本可能差好几个大版本。升级：`pi update --extensions`（安装的是无 ref 锁定的 git 包，reconcile 会拉最新 main 并自动 `npm install`），然后重启 pi。
 
@@ -41,7 +73,13 @@ src/judge/          ← 中立判断核心（v0.6 新增，替换旧 src/jev/）
   normalize.ts      选择串 → 类型枚举（便宜/中等/强等），无 SDK 依赖
 
 其余模块（12 个都通过 facade 调用判断）：
-  router/           task-router（分级）、model-router、agent-router
+  router/           task-router（分级）、model-router、agent-router、
+                    assess-task（jev_assess_task）、model-tier（jev_request_model_tier）
+  gates/            tool-gate、context-gate（jev_search_code）、skill-gate、
+                    assess-risk（jev_assess_risk）
+  compaction/       prune-context（jev_prune_context）、epoch、pruner、context-hook
+  judgment/         diagnose-failure（jev_diagnose_failure）
+  memory/           memory-add（jev_memory_add）、memory-gate、retrieval、store
   gates/            tool-gate、context-gate（jev_search_code）、skill-gate
   judgment/         failure-classifier、retry-judge
   memory/           memory-gate、retrieval

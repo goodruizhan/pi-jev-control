@@ -100,6 +100,18 @@
 - **统计信息** — 跟踪所有模块和判断后端的使用情况
 - **项目级配置覆盖** — `.pi/jev-control.json` 覆盖全局配置
 
+## 控制方向
+
+自 v1.0.0 起本插件做了架构反转：**模型调用 Jev，Jev 从不替模型做决定**。
+Jev 不切换模型、不剪 context、不阻塞工具调用、不自动写记忆——它只返回信息，模型自己做主。
+确定性规则仍是安全底线，从不问模型。
+
+七个「模型主动问」的工具：`jev_assess_task`、`jev_assess_risk`、`jev_diagnose_failure`、
+`jev_request_model_tier`、`jev_prune_context`、`jev_memory_add`、`jev_rank`。
+配套技能 `skills/pi-jev-control/SKILL.md` 说明什么时候用哪个。
+
+想恢复旧行为：`router.mode: "set-model"`、`compaction.autoMode: "auto"`。
+
 ## v0.1 功能
 
 - Jev 客户端：统一封装 TypeSafe SDK，并支持优雅降级
@@ -142,7 +154,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "cheapConfidenceThreshold": 0.85,
     "fallbackTier": "medium",
     "routerFailureTier": "medium",
-    "mode": "set-model",
+    "mode": "rules-only",
     "models": {
       "cheap": {
         "provider": "openai-codex",
@@ -181,7 +193,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "maxSameFailureRetries": 2,
     "timeoutMs": 2500,
     "skipBenignExitCodes": true,
-    "appendToResult": true
+    "appendToResult": false
   },
   "contextGate": {
     "enabled": true,
@@ -198,10 +210,12 @@ pi install git:github.com/goodruizhan/pi-jev-control
     "enabled": true
   },
   "memoryGate": {
-    "enabled": true
+    "enabled": false,
+    "mode": "suggest"
   },
   "compaction": {
     "enabled": true,
+    "autoMode": "off",
     "preserveRecentMessages": 8,
     "minCharsToSave": 8000,
     "minTurnsBetweenPlans": 20
