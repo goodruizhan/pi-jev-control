@@ -189,7 +189,19 @@ export interface JevControlConfig {
     fallbackTier: TaskTier;
     routerFailureTier: "medium" | "strong";
     cheapConfidenceThreshold: number;
-    mode: "set-model" | "tier-only";
+    /**
+     * Who decides the task tier, and whether that decision switches the model.
+     *
+     * - "rules-only" (default) — no Jev inference. Tiers come only from explicit user
+     *   overrides (`[strong]` inline or `/jev route`) and the model's own
+     *   `jev_request_model_tier` calls. Deterministic risk features act as a floor.
+     *   Nothing switches the model behind its back.
+     * - "advisory" (alias: "tier-only") — Jev infers the tier, and the verdict is
+     *   recorded + announced as information only. The model is never switched.
+     * - "set-model" — legacy: Jev infers the tier and the model is switched.
+     * - "off" — routing disabled entirely.
+     */
+    mode: "rules-only" | "advisory" | "set-model" | "tier-only" | "off";
     models: {
       cheap: ModelRouteSpec;
       medium: ModelRouteSpec;
@@ -235,6 +247,16 @@ export interface JevControlConfig {
     preserveRecentMessages: number;
     minCharsToSave: number;
     minTurnsBetweenPlans: number;
+    /**
+     * Who decides that pruning should happen.
+     * - "off" (default) — the context hook only applies a plan that the model asked
+     *   for (`jev_prune_context`) or the user requested (`/jev compact plan`). It
+     *   never prunes on its own.
+     * - "suggest" — as "off", but announces when the tool-output budget has grown
+     *   large enough that pruning would pay off. Still no automatic pruning.
+     * - "auto" — legacy: the hook decides and prunes by itself.
+     */
+    autoMode: "off" | "suggest" | "auto";
   };
   reviewGate: {
     enabled: boolean;

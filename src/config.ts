@@ -39,7 +39,10 @@ const DEFAULT_CONFIG: JevControlConfig = {
     fallbackTier: "medium",
     routerFailureTier: "medium",
     cheapConfidenceThreshold: 0.85,
-    mode: "set-model",
+    // Default: the model stays in control of its own tier. Jev never switches it
+    // automatically; the model opts in via jev_request_model_tier, and the user can
+    // still force a tier with `[strong]` or `/jev route`.
+    mode: "rules-only",
     models: {
       cheap: { provider: "REPLACE_ME", model: "REPLACE_ME" },
       medium: { provider: "REPLACE_ME", model: "REPLACE_ME" },
@@ -59,7 +62,9 @@ const DEFAULT_CONFIG: JevControlConfig = {
     maxSameFailureRetries: 2,
     timeoutMs: 2500,
     skipBenignExitCodes: true,
-    appendToResult: true,
+    // Failure counting, circuit-breaking and memory records stay on; the tool
+    // output itself is left untouched so the model reads exactly what the tool said.
+    appendToResult: false,
   },
   contextGate: {
     enabled: true,
@@ -75,14 +80,18 @@ const DEFAULT_CONFIG: JevControlConfig = {
   agentRouter: {
     enabled: true,
   },
+  // Auto memory capture is off by default: the model records what it wants to
+  // remember itself through jev_memory_add. jev_memory_search is unaffected.
   memoryGate: {
-    enabled: true,
+    enabled: false,
   },
   compaction: {
     enabled: true,
     preserveRecentMessages: 8,
     minCharsToSave: 8000,
     minTurnsBetweenPlans: 20,
+    // The model asks for pruning (jev_prune_context) instead of the hook deciding.
+    autoMode: "off",
   },
   reviewGate: {
     enabled: true,

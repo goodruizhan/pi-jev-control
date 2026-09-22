@@ -5,6 +5,7 @@ import { buildToolGroups, buildPruningPlan, applyPruning } from "./pruner.js";
 import {
   advanceTurn,
   consumeSkipNextGeneration,
+  getCurrentTurn,
   getEpochPlan,
   setEpochPlan,
   shouldGeneratePlan,
@@ -12,6 +13,8 @@ import {
 } from "./epoch.js";
 import { checkCacheGate } from "./cache-aware.js";
 import { readAllFailures } from "../memory/store.js";
+import { notifyAutomatic } from "../ui.js";
+import { tr } from "../i18n.js";
 import {
   recordCharsPruned,
   recordCharsTruncated,
@@ -27,12 +30,22 @@ import {
  * NEVER modifies the on-disk Pi session.
  * Only modifies the messages view sent to the LLM for this request.
  *
+ * compaction.autoMode decides who gets to decide:
+ *   "off" (default) — the hook only applies a plan that was explicitly requested, via
+ *     the `jev_prune_context` tool or `/jev compact plan`. It never prunes on its own,
+ *     because pruning deletes information from the model's own memory.
+ *   "suggest" — same, plus an announcement when the tool-output budget has grown
+ *     large enough that pruning would pay off.
+ *   "auto" — legacy: the hook decides and prunes by itself.
+ *
  * Flow:
  * 1. If compaction is disabled, pass through
- * 2. If no epoch plan exists, generate one (with cache-aware gate)
+ * 2. If no plan exists, either generate one (auto) or pass through
  * 3. Apply the plan to filter messages
  * 4. Return the filtered messages
  */
+
+let lastSuggestTurn = -1;
 
 export function setupContextHook(pi: ExtensionAPI): void {
   pi.on("turn_start", () => {
@@ -49,6 +62,18 @@ export function setupContextHook(pi: ExtensionAPI): void {
     if (!Array.isArray(messages) || messages.length === 0) return;
     recordContextEvent();
     if (consumeSkipNextGeneration()) return;
+
+    // Non-auto modes: only apply a plan that someone explicitly requested. The hook
+    // never decides on its own, because it would be deleting the model's memory.
+    if (config.compaction.autoMode !== "auto") {
+      const pendingPlan = getEpochPlan();
+      if (!pendingPlan) {
+        if (config.compaction.autoMode === "suggest") maybeSuggestPruning(ctx, messages);
+        return;
+      }
+      touchEpoch();
+      return applyPlanIfUseful(messages, pendingPlan);
+    }
 
     const existingPlan = getEpochPlan();
     const needsPlan = shouldGeneratePlan(config.compaction.minTurnsBetweenPlans);
@@ -108,6 +133,24 @@ function applyPlanIfUseful(messages: PiMessage[], plan: PruningPlan): { messages
   recordCharsTruncated(truncated);
   recordTokensSaved(saved);
   return { messages: filtered };
+}
+
+/**
+ * Suggest pruning without doing it. Fires at most once per turn, and only when the
+ * whole tool-output budget already clears the configured savings threshold.
+ */
+function maybeSuggestPruning(ctx: ExtensionContext, messages: PiMessage[]): void {
+  const config = loadConfig();
+  if (getCurrentTurn() === lastSuggestTurn) return;
+  const candidateChars = buildToolGroups(messages).groups.reduce(
+    (sum, group) => sum + group.charsBefore, 0,
+  );
+  if (candidateChars < config.compaction.minCharsToSave) return;
+  lastSuggestTurn = getCurrentTurn();
+  notifyAutomatic(ctx, tr(
+    `Context has accumulated ${candidateChars} chars of tool output. If some of it is no longer needed, call jev_prune_context to slim it down.`,
+    `上下文已累积 ${candidateChars} 字符的工具输出。如果其中有不再需要的，可调用 jev_prune_context 主动瘦身。`,
+  ), "info");
 }
 
 /**

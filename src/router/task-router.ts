@@ -6,18 +6,54 @@ import { TASK_TIER_QUESTION } from "../judge/questions.js";
 import { buildRouterResult } from "../judge/normalize.js";
 import { runtimeState } from "../state/runtime-state.js";
 import { isConfiguredModelSpec, modelCandidates, routeModelDetailed } from "./model-router.js";
+import type { ModelRouteResult } from "./model-router.js";
 import { extractRouteRisk, summarizeTask, tierAtLeast } from "./risk.js";
-import type { JevControlConfig, RouterResult } from "../types.js";
+import type { JevControlConfig, RouterResult, TaskTier } from "../types.js";
 import { SHORT_CONFIRMATIONS } from "../types.js";
 import { recordModelTierDecision } from "../stats/savings.js";
 import { tr } from "../i18n.js";
 import { notifyAutomatic } from "../ui.js";
 
-let nextOverride: "cheap" | "medium" | "strong" | undefined;
+/**
+ * Task Router — decides which model tier a task deserves.
+ *
+ * The direction of control is the point. `router.mode` decides *who* gets to decide,
+ * and whether the decision may switch the model at all:
+ *
+ *   rules-only (default) — nobody decides automatically. The user can force a tier
+ *     (`[strong]` inline or `/jev route`), and the model can request one itself via
+ *     `jev_request_model_tier`. Deterministic risk features are a floor only — they
+ *     never switch the model on their own.
+ *   advisory / tier-only — Jev decides, and the verdict is recorded and announced as
+ *     information. The model is never switched behind the model's back.
+ *   set-model — legacy: Jev decides and the model is switched.
+ *   off — routing does nothing.
+ */
 
-/** One-shot override for the next substantive user input. */
-export function setNextRouteOverride(tier: "cheap" | "medium" | "strong"): void {
+export type RouteMode = JevControlConfig["router"]["mode"];
+export type NamedTier = "cheap" | "medium" | "strong";
+
+const INLINE_OVERRIDE_RE = /^\s*\[(cheap|medium|strong)\](?=\s|$)/i;
+
+/** Tier override queued by `/jev route <tier>` for the next substantive input. */
+let nextOverride: NamedTier | undefined;
+
+export function setNextRouteOverride(tier: NamedTier): void {
   nextOverride = tier;
+}
+
+export function readInlineOverride(text: string): NamedTier | undefined {
+  return INLINE_OVERRIDE_RE.exec(text)?.[1]?.toLowerCase() as NamedTier | undefined;
+}
+
+/** Does this mode ask Jev to infer the tier? */
+export function modeConsultsJudge(mode: RouteMode): boolean {
+  return mode === "set-model" || mode === "advisory" || mode === "tier-only";
+}
+
+/** Does this mode let an inferred tier actually switch the model? */
+export function modeSwitchesModel(mode: RouteMode): boolean {
+  return mode === "set-model";
 }
 
 function shouldSkipRouting(text: string, source: string): boolean {
@@ -59,32 +95,21 @@ function fallbackResult(tier: "medium" | "strong", reason: string): RouterResult
   };
 }
 
-/** Classify the whole task, then apply deterministic risk limits. */
-export async function routeTask(
+/**
+ * Ask Jev what tier a task deserves, then apply the deterministic risk floor.
+ *
+ * Pure judgment — this never switches anything. Called by routeTask() in advisory
+ * modes and by the `jev_assess_task` tool.
+ */
+export async function judgeTaskTier(
   text: string,
-  source: string,
   signal?: AbortSignal,
   ctx?: ExtensionContext,
-): Promise<RouterResult | null> {
-  if (shouldSkipRouting(text, source)) return null;
+): Promise<RouterResult> {
   const config = loadConfig();
-  if (!config.enabled || !config.router.enabled) return null;
-  if (config.router.mode === "set-model" && !hasConfiguredRouterTarget(config.router.models)) return null;
-
   const risk = extractRouteRisk(text);
-  const inlineOverride = /^\s*\[(cheap|medium|strong)\](?=\s|$)/i.exec(text)?.[1]?.toLowerCase() as
-    | "cheap" | "medium" | "strong" | undefined;
-  const override = inlineOverride ?? nextOverride;
-  nextOverride = undefined;
-  if (override) {
-    return {
-      tier: override, confidence: 1, rawChoice: override, rawConfidence: 1,
-      latencyMs: 0, timestamp: Date.now(), source: "override",
-      reason: inlineOverride ? "inline override" : "command override", riskFeatures: risk.features,
-    };
-  }
-
   const failureTier = config.router.routerFailureTier === "strong" ? "strong" : "medium";
+
   if (!isJudgeAvailable("router")) {
     return { ...fallbackResult(tierAtLeast(failureTier, risk.minimumTier) as "medium" | "strong", "judgment backend unavailable"), riskFeatures: risk.features };
   }
@@ -99,7 +124,9 @@ export async function routeTask(
       ...previousContext(ctx),
     }, { task_tier: TASK_TIER_QUESTION }, { module: "router", signal });
     if (!result.ok) {
-      if (result.errorType === "aborted") return null;
+      if (result.errorType === "aborted") {
+        return { ...fallbackResult(tierAtLeast(failureTier, risk.minimumTier) as "medium" | "strong", `aborted: aborted`), riskFeatures: risk.features };
+      }
       console.warn("[pi-jev-control] Router judgment failed:", result.errorType, result.error);
       return {
         ...fallbackResult(tierAtLeast(failureTier, risk.minimumTier) as "medium" | "strong", `${result.errorType}: ${result.error}`),
@@ -137,8 +164,126 @@ export async function routeTask(
   }
 }
 
+/**
+ * Decide the tier for a user input.
+ *
+ * Returns null when no tier decision is warranted at all — routing disabled, an
+ * explicit off mode, a short confirmation, or rules-only mode with no user override.
+ * A null result means "leave the model exactly where it is".
+ */
+export async function routeTask(
+  text: string,
+  source: string,
+  signal?: AbortSignal,
+  ctx?: ExtensionContext,
+): Promise<RouterResult | null> {
+  if (shouldSkipRouting(text, source)) return null;
+  const config = loadConfig();
+  if (!config.enabled || !config.router.enabled) return null;
+  if (config.router.mode === "off") return null;
+  if (config.router.mode === "set-model" && !hasConfiguredRouterTarget(config.router.models)) return null;
+
+  const risk = extractRouteRisk(text);
+  const inlineOverride = readInlineOverride(text);
+  const override = inlineOverride ?? nextOverride;
+  nextOverride = undefined;
+
+  if (override) {
+    // The user asked for this tier; risk features may only raise it, never lower it.
+    const tier = tierAtLeast(override, risk.minimumTier) as NamedTier;
+    return {
+      tier, confidence: 1, rawChoice: override, rawConfidence: 1,
+      latencyMs: 0, timestamp: Date.now(), source: "override",
+      reason: `${inlineOverride ? "inline override" : "command override"}${
+        tier !== override ? ` raised to ${tier} by ${risk.features.join(", ")}` : ""
+      }`,
+      riskFeatures: risk.features,
+    };
+  }
+
+  // rules-only with no override: nobody decides, so nothing may switch.
+  if (!modeConsultsJudge(config.router.mode)) return null;
+
+  return judgeTaskTier(text, signal, ctx);
+}
+
 export function hasConfiguredRouterTarget(models: JevControlConfig["router"]["models"]): boolean {
   return Object.values(models).some((route) => modelCandidates(route).some(isConfiguredModelSpec));
+}
+
+/** A tier request coming from the model itself, not from a Jev verdict. */
+export interface ModelTierRequest {
+  tier: TaskTier;
+  reason: string;
+  /** Extra text scanned for deterministic risk features that act as a floor. */
+  context?: string;
+}
+
+export interface ModelTierRequestResult extends ModelRouteResult {
+  requestedTier: NamedTier;
+  /** True when deterministic risk features raised the model's own request. */
+  floorApplied: boolean;
+  riskFeatures: string[];
+}
+
+/**
+ * Model-initiated tier request — the entry point for `jev_request_model_tier`.
+ *
+ * This is the inversion of the old auto-router: the request comes from the model
+ * (which has the full conversation and tool trail) instead of from Jev (which sees a
+ * 4000-character summary). Risk features can still raise the requested tier, which is
+ * the one place where a rule overrides the model — and it can only go up.
+ */
+export async function requestModelTier(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  request: ModelTierRequest,
+): Promise<ModelTierRequestResult> {
+  const config = loadConfig();
+  const risk = extractRouteRisk(request.context ?? request.reason);
+  const wanted: TaskTier = request.tier === "unknown" ? config.router.fallbackTier : request.tier;
+  const requested = tierAtLeast(wanted, risk.minimumTier) as NamedTier;
+  const floorApplied = requested !== wanted;
+  const base = { requestedTier: requested, floorApplied, riskFeatures: risk.features };
+
+  if (!config.enabled || !config.router.enabled) {
+    return { success: false, tier: requested, reason: "router disabled", ...base };
+  }
+  if (config.router.mode === "off") {
+    return { success: false, tier: requested, reason: "router mode is off", ...base };
+  }
+
+  const selected = await routeModelDetailed(pi, ctx, requested);
+  const audit = {
+    requestId: 0,
+    timestamp: Date.now(),
+    source: "model-request",
+    rawChoice: wanted,
+    rawConfidence: 0,
+    requestedTier: requested,
+    effectiveTier: selected.success ? selected.tier : undefined,
+    provider: selected.provider,
+    model: selected.model,
+    thinking: selected.thinking,
+    candidateIndex: selected.candidateIndex,
+    success: selected.success,
+    reason: `${request.reason}${floorApplied ? ` [risk floor: ${risk.features.join(", ")}]` : ""}${selected.reason ? ` (${selected.reason})` : ""}`,
+    latencyMs: 0,
+    riskFeatures: risk.features,
+  };
+  runtimeState.lastRouteAudit = audit;
+  runtimeState.routeAudits.push(audit);
+  if (runtimeState.routeAudits.length > 50) runtimeState.routeAudits.shift();
+  console.info(`[pi-jev-control] route ${JSON.stringify(audit)}`);
+
+  if (selected.success) {
+    runtimeState.lastTaskTier = selected.tier;
+    runtimeState.lastDecision = {
+      type: "task_tier", value: selected.tier, confidence: 0, timestamp: audit.timestamp,
+    };
+    recordModelTierDecision();
+  }
+  return { ...selected, ...base };
 }
 
 export function setupTaskRouter(pi: ExtensionAPI): void {
@@ -162,6 +307,37 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
     // Serialize setModel calls; a newer input always gets the last write.
     const apply = async () => {
       if (id !== requestId) return;
+
+      // Advisory modes, and any verdict that the user did not explicitly ask for:
+      // record and announce the judgment, but never switch the model. Only a user
+      // override (source "override") may switch outside set-model mode.
+      const userDirected = routerResult.source === "override";
+      if (!userDirected && !modeSwitchesModel(loadConfig().router.mode)) {
+        const audit = {
+          requestId: id, taskFingerprint, startedAt, timestamp: Date.now(), source: "advisory",
+          rawChoice: routerResult.rawChoice, rawConfidence: routerResult.rawConfidence,
+          requestedTier: routerResult.tier, success: false,
+          reason: routerResult.reason, backend: routerResult.backend,
+          judgeModel: routerResult.judgeModel, confidenceKind: routerResult.confidenceKind,
+          probabilities: routerResult.probabilities,
+          latencyMs: routerResult.latencyMs, riskFeatures: routerResult.riskFeatures ?? [],
+        };
+        runtimeState.lastRouteAudit = audit;
+        runtimeState.routeAudits.push(audit);
+        if (runtimeState.routeAudits.length > 50) runtimeState.routeAudits.shift();
+        console.info(`[pi-jev-control] route ${JSON.stringify(audit)}`);
+        runtimeState.lastJevModel = routerResult.judgeModel;
+        runtimeState.lastDecision = {
+          type: "task_tier", value: routerResult.tier,
+          confidence: routerResult.confidence, timestamp: routerResult.timestamp,
+        };
+        notifyAutomatic(ctx, tr(
+          `Jev tier assessment (informational, no model switch): ${routerResult.tier}${routerResult.reason ? ` — ${routerResult.reason}` : ""}`,
+          `Jev 等级评估（仅供参考，未切换模型）：${routerResult.tier}${routerResult.reason ? `——${routerResult.reason}` : ""}`,
+        ), "info");
+        return;
+      }
+
       const selected = await routeModelDetailed(pi, ctx, routerResult.tier);
       const audit = {
         requestId: id, taskFingerprint, startedAt, timestamp: Date.now(), source: routerResult.source ?? "judge",
@@ -208,6 +384,9 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_result", async (event, ctx) => {
+    // Automatic escalation belongs to the legacy set-model mode. In rules-only mode
+    // the model reads the tool results itself and asks for an upgrade when it wants one.
+    if (loadConfig().router.mode !== "set-model") return;
     const id = requestId;
     if (!id || !runtimeState.lastTaskTier) return;
     if (event.isError) toolFailures += 1;
