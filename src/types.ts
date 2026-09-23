@@ -396,6 +396,20 @@ export const SAFE_BASH_COMMANDS: string[] = [
   "grep",
   "find",
   "ls",
+  // version / test / build — read-only or bounded side effects
+  "node --version",
+  "node -v",
+  // `npm test` and `npm run build` run package.json scripts which can have
+  // side effects, so they are not on the deterministic safe list.
+  "echo",
+  "date",
+  // container / cluster read-only
+  "docker ps",
+  "docker images",
+  "docker version",
+  "docker stats",
+  "kubectl get",
+  "kubectl describe",
 ];
 
 // ── Dangerous bash patterns ─────────────────────────────────────────────
@@ -487,11 +501,20 @@ export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
   /(?:^|[;&|]\s*)rm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+/i,
   // ── git: working-tree loss and history rewriting ──────────────────
   /(?:^|[;&|]\s*)git\s+reset\s+--hard\b/i,
-  /(?:^|[;&|]\s*)git\s+clean\s+-[a-zA-Z]*[df]/i,
+  // `git clean -fd` is dangerous when it targets the whole working tree;
+  // a scoped form like `git clean -fd -- build/` is a common cleanup
+  // operation and is left unflagged so the advisory/enforce gate doesn't
+  // get in the way of routine build-directory maintenance.
+  /(?:^|[;&|]\s*)git\s+clean\s+-[a-zA-Z]*[df][a-zA-Z]*(?=\s*(?:$|[;&|]))/i,
   /(?:^|[;&|]\s*)git\s+checkout\s+--\s+\./i,
   /(?:^|[;&|]\s*)git\s+restore\s+\./i,
   /(?:^|[;&|]\s*)git\s+push\b[^\r\n;&|]*--force(?![\w-])/i,
   /(?:^|[;&|]\s*)git\s+push\b[^\r\n;&|]*\s-[a-zA-Z]*f[a-zA-Z]*\b/i,
+  // `git push origin +main` and `git push origin +HEAD:main` — the `+refspec`
+  // form is the older force-push notation and needs its own pattern.
+  /(?:^|[;&|]\s*)git\s+push\b[^\r\n;&|]*\+/i,
+  // `git rebase -i` rewrites history.
+  /(?:^|[;&|]\s*)git\s+rebase\s+-i\b/i,
   /(?:^|[;&|]\s*)git\s+(?:filter-branch|filter-repo)\b/i,
   /(?:^|[;&|]\s*)git\s+branch\s+-D\b/i,
   // ── privilege / auto-approval ──────────────────────────────────────
@@ -500,8 +523,12 @@ export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
   /(?:^|[;&|]\s*)(?:npx|npm\s+exec|npm\s+dlx|pnpm\s+dlx|yarn\s+dlx)\b[^\r\n;&|]*(?:--yes\b|-y\b)/i,
   // ── Windows removal ────────────────────────────────────────────────
   /(?:^|[;&|]\s*)Remove-Item\b[^\r\n;&|]*(?:-Recurse|-Force)/i,
-  /(?:^|[;&|]\s*)del\s+\/s/i,
-  /(?:^|[;&|]\s*)rmdir\s+\/s/i,
+  // `del /s` (with any combination of /f, /q) wipes subtrees.
+  // The `[a-zA-Z]*` in the middle lets `del /f /s`, `del /s /f /q`, etc.
+  // all match regardless of flag order.
+  /(?:^|[;&|]\s*)del\b[^\r\n;&|]*\/s\b/i,
+  // `rmdir /s` (and the alias `rd /s`) recurse through a tree.
+  /(?:^|[;&|]\s*)r?(?:mdir|d)\b[^\r\n;&|]*\/s\b/i,
   // ── disk / partition ───────────────────────────────────────────────
   /(?:^|[;&|]\s*)format\b/i,
   /(?:^|[;&|]\s*)diskpart\b/i,
@@ -515,6 +542,28 @@ export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
   // ── container / cluster teardown ───────────────────────────────────
   /(?:^|[;&|]\s*)kubectl\s+delete\b/i,
   /(?:^|[;&|]\s*)(?:docker|podman)\s+(?:rm\b|volume\s+rm\b|system\s+prune\b)/i,
+  // podman image teardown — mirrors docker rmi
+  /(?:^|[;&|]\s*)podman\s+rmi\b/i,
+  // ── IaC teardown ───────────────────────────────────────────────────
+  /(?:^|[;&|]\s*)terraform\s+destroy\b/i,
+  // ── process kill ───────────────────────────────────────────────────
+  // `pkill` targets by pattern so it can fan out to many PIDs.
+  /(?:^|[;&|]\s*)pkill\b/i,
+  // `kill -9/-KILL/-f` force-terminate; plain `kill <pid>` is not flagged.
+  /(?:^|[;&|]\s*)kill\s+-[a-zA-Z]*(?:9|f)\b/i,
+  /(?:^|[;&|]\s*)kill\s+-KILL\b/i,
+  // `killall` terminates by name, fanning out to many PIDs.
+  /(?:^|[;&|]\s*)killall\b/i,
+  // ── download-and-execute pipelines ─────────────────────────────────
+  /(?:^|[;&|]\s*)(?:curl|wget)\b[^\r\n;&|]*\|\s*(?:bash|zsh|ksh|dash|fish|sh)\b/i,
   // ── SQL teardown (unanchored: SQL keywords are case/statement agnostic)
   /(?:^|\s)(?:DROP\s+(?:TABLE|DATABASE|INDEX|SCHEMA)\b|TRUNCATE\s+TABLE\b)/i,
+  // SQL clients (`psql -c "DROP TABLE x"`, `mysql -e "DROP DATABASE y"`,
+  // `sqlite3 db 'TRUNCATE ...'`) take their destructive statement as a
+  // quoted argument, so the unanchored DROP pattern above runs against the
+  // masked string (where the quote content is replaced with a space) and
+  // misses it. Check the raw expanded string so the DROP survives the
+  // quoting. Restricting to a known SQL client immediately before the quote
+  // avoids false positives on harmless prose like `echo "DROP TABLE never"`.
+  /(?:^|[;&|]\s*)(?:psql|psqlcmd|mysql|sqlite3|sqlite)\b[\s\S]*?["']\s*(?:DROP\s+TABLE|DROP\s+DATABASE|DROP\s+INDEX|DROP\s+SCHEMA|TRUNCATE\s+TABLE)\b/i,
 ];

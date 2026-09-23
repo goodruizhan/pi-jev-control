@@ -104,11 +104,11 @@ const WRAPPER_RULES: WrapperRule[] = [
     ),
     group: 1,
   },
-  // eval / exec / command / nohup — builtins that run their argument, with an
-  // optional `--` end-of-options marker in between.
+  // eval / exec / command / nohup / env — builtins that run their argument,
+  // with an optional `--` end-of-options marker in between.
   {
     pattern: new RegExp(
-      String.raw`\b(?:eval|exec|command|nohup)\b(?:\s+${SHELL_OPTION})*\s+(?:--\s+)?(\S+(?:[^\S\n]\S+)*)`,
+      String.raw`\b(?:eval|exec|command|nohup|env)\b(?:\s+${SHELL_OPTION})*\s+(?:--\s+)?(\S+(?:[^\S\n]\S+)*)`,
       "gi",
     ),
     group: 1,
@@ -163,6 +163,8 @@ const INTERPRETER_DESTRUCTIVE: RegExp[] = [
   /(?:^|[;&|]\s*)python[\w.]*\s+-c\b[^\r\n]*\bos\.(?:unlink|remove)\s*\(/i,
   // subprocess accepts argv arrays as well as shell strings.
   /(?:^|[;&|]\s*)python[\w.]*\s+-c\b[^\r\n]*\bsubprocess\.(?:run|call|check_call|check_output|Popen)\s*\(\s*\[\s*["']rm["']\s*,\s*["']-[a-zA-Z]*[rf][a-zA-Z]*["']/i,
+  // `subprocess.run('rm -rf /', shell=True)` string form in a `-c` payload.
+  /(?:^|[;&|]\s*)python[\w.]*\s+-c\b[^\r\n]*\bsubprocess\.(?:run|call|check_call|check_output|Popen)\s*\(\s*["'][^"']*\brm\b[^"']*-[a-zA-Z]*[rf][a-zA-Z]*\b["']/i,
   /os\.system\s*\(\s*["'][^"']*(?:\brm\s+-[a-zA-Z]*[rf]\b|unlink|drop\s+table)/i,
   /subprocess\.\w+\s*\(\s*["'][^"']*(?:\brm\s+-[a-zA-Z]*[rf]\b|unlink)/i,
   // `child_process.exec('rm -rf /')` and `require('child_process').exec(...)`
@@ -282,7 +284,11 @@ function maskInertCatHeredocs(command: string): string {
 }
 
 function stripEnvAssignments(segment: string): string {
-  return segment.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*|^\*\s+/, "").trim();
+  let result = segment.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*|^\*\s+/, "").trim();
+  // Strip a leading `--` end-of-options marker left by wrappers like
+  // `env FOO=bar -- rm -rf /` so the destructive payload still matches.
+  result = result.replace(/^--\s+/, "").trim();
+  return result;
 }
 
 /**
@@ -330,6 +336,17 @@ function isSegmentDangerous(segment: string, depth: number): boolean {
   const stripped = stripEnvAssignments(maskQuoted(expanded));
   for (const pattern of DANGEROUS_BASH_PATTERNS) {
     if (pattern.test(stripped)) return true;
+  }
+  // SQL client commands (`psql -c 'DROP DATABASE x;'`, `mysql -e "DROP TABLE y"`)
+  // take their destructive statement as a quoted argument, so the unanchored
+  // DROP pattern above runs against the masked string (where the quote content
+  // is replaced with a space) and misses it. Check the raw expanded string so
+  // the DROP survives the quoting. Restricting to a known SQL client
+  // immediately before the quote avoids false positives on harmless prose like
+  // `echo "DROP TABLE never"`.
+  if (/(?:^|[;&|]\s*)(?:psql|psqlcmd|mysql|sqlite3|sqlite)\b[^\r\n;&|]*?"\s*(?:DROP\s+TABLE|DROP\s+DATABASE|DROP\s+INDEX|DROP\s+SCHEMA|TRUNCATE\s+TABLE)\b/i.test(expanded)
+    || /(?:^|[;&|]\s*)(?:psql|psqlcmd|mysql|sqlite3|sqlite)\b[^\r\n;&|]*?'\s*(?:DROP\s+TABLE|DROP\s+DATABASE|DROP\s+INDEX|DROP\s+SCHEMA|TRUNCATE\s+TABLE)\b/i.test(expanded)) {
+    return true;
   }
   for (const pattern of INTERPRETER_DESTRUCTIVE) {
     if (pattern.test(expanded)) return true;

