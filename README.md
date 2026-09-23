@@ -4,6 +4,37 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v1.0.1 Round-3 Probe Gap Closure
+
+- **12 missing dangerous-command patterns** — Windows `del /s` (any flag order) and `rmdir /s` alias `rd /s`; `git push +refspec` and `git rebase -i`; `podman rmi`; `terraform destroy`; `pkill`, `killall`, `kill -9|-f|-KILL`; `curl`/`wget` piped to `bash|zsh|ksh|dash|fish|sh`; SQL clients (`psql`/`psqlcmd`/`mysql`/`sqlite3`/`sqlite`) with `DROP` as a quoted argument; `env` as a command runner.
+- **`git clean -fd` narrowed** — a scoped form like `git clean -fd -- build/` is now left unflagged so routine build-directory maintenance isn't blocked; `git clean -fd` alone still warns.
+- **`env` added to WRAPPER_RULES** — `env rm -rf /` payloads are unwrapped and checked just like `sh -c` / `bash -lc` payloads.
+- **`stripEnvAssignments` hardened** — a trailing `--` end-of-options marker left by `env FOO=bar -- rm -rf /` is now stripped before matching.
+- **SQL-in-quotes check** — the unanchored `DROP TABLE` / `TRUNCATE` patterns run against the masked string, where quoted regions become a space and the DROP disappears; a raw-expanded check now catches `psql -c 'DROP DATABASE x;'` without false-positiving on prose like `echo "DROP TABLE never"`.
+- **10 new safe-prefix whitelist entries** — `node --version`, `node -v`, `echo`, `date`, `docker ps`, `docker images`, `docker version`, `docker stats`, `kubectl get`, `kubectl describe`.
+- **`npm test` / `npm run build` are NOT safe** — these can run package.json scripts with side effects and are intentionally left unflagged, not whitelisted.
+- **Regression coverage** — 3 new tests lock the probe cases: 27 destructive variants flagged, 23 everyday harmless commands unflagged, 12 safe prefixes still safe.
+- **Gate status** — 140/140 tests, 0 typecheck errors, 0 audit vulnerabilities, 20/20 eval agree, real Jev-1.13.0 smoke in 968ms.
+
+## v1.0.0 Architecture Inversion
+
+The model calls Jev, Jev never decides on its behalf. Five modules that used to intercept the model behind its back — task router, tool gate, compaction, memory gate, failure classifier — are now either model-initiated `jev_*` tools or deterministic rules. The seven tools that implement this are `jev_assess_task`, `jev_assess_risk`, `jev_diagnose_failure`, `jev_request_model_tier`, `jev_prune_context`, `jev_memory_add`, and `jev_rank`.
+
+The deterministic safety floor is enforced by a wrapper-aware shell pattern table with bypass coverage for `sh -c`, `bash -lc`, `python -c`, `node -e`, `cmd /c`, `powershell -Command`, `env`, `eval`, `exec`, `nohup`, `timeout`, `nice`, `$IFS` obfuscation, and ANSI-C quoting.
+
+### v0.9.1 Shell-Safety and Judge-Contract Fixes
+
+- **Wrapper-aware dangerous detection** — destructive commands hidden inside `sh -c '...'`, `bash -lc '...'`, `python -c "..."`, `node -e '...'`, `cmd /c ...`, `powershell -Command ...`, `eval`, `exec`, `command`, `nohup`, `nice`, `timeout`, `env`, `$IFS` whitespace obfuscation, and ANSI-C `$'...'` quoting are now caught.
+- **Team-level destructive commands** — `git filter-branch`, `git filter-repo`, `git branch -D`, `git push --force`, `git push -f`, `sudo`, `npm publish`, `npx --yes`, `kubectl delete`, `docker rm`, `docker volume rm`, `docker system prune`, `podman rm`, `podman rmi`, `DROP TABLE/DATABASE/INDEX/SCHEMA`, `TRUNCATE TABLE`, `chmod -R`, `chown -R`, `dd of=/dev/...`, `mkfs`, `fdisk`, `sgdisk`, `format`, `diskpart`, `Remove-Item -Recurse/-Force`, `del /s`, `rmdir /s`, `find -delete/-exec/-ok/-fprint`.
+- **Inert `cat` heredocs** — content inside `cat <<EOF ... EOF` is data, not a command; the wrapper expansion now skips it. Quoted delimiters, tab-indented markers, command substitutions, and later chained commands remain visible.
+- **Failure counting decoupled from Jev** — local failure counters keep incrementing when `retryJudge.enabled=false` or the Jev backend is down, so the same-failure circuit breaker still works without an automatic model call.
+- **Memory gate on auto mode only** — persistent failure memory writes only when `memoryGate.mode: "auto"` and `retryJudge.appendToResult: true`; advisory mode stays silent.
+- **`/jev decision on|off`** — toggle the Decision Copilot without editing the config.
+- **`toolGate.mode: "advisory"`** — deterministic dangerous patterns warn instead of blocking; the safety floor is still there but doesn't interrupt normal flow.
+- **`router.mode: "tier-only"`** — Jev infers the tier, the verdict is recorded + announced as information only, the model is never switched.
+- **Round-2 gap closure** — shell bypass variants (`podman rm -f`, Python deletion, `subprocess` argv arrays), failure counter decoupling, doc drift, and 14-tool count.
+- **Gate status** — 140/140 tests, 0 typecheck errors, 0 audit vulnerabilities, 20/20 eval agree.
+
 ## v0.9 Model Priority and Thinking Levels
 
 - **Multiple models per tier** — `router.models.<tier>` accepts an ordered candidate list; later candidates are used when a preferred model is missing or lacks authentication

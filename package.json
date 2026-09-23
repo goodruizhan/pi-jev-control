@@ -1,6 +1,6 @@
 {
   "name": "pi-jev-control",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Pluggable judgment control layer for Pi Coding Agent — Jev-compatible decision models, per-module backends, tool gating, failure classification, context pruning, and measurable savings",
   "private": true,
   "repository": { "type": "git", "url": "https://github.com/goodruizhan/pi-jev-control.git" },

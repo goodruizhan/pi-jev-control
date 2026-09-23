@@ -4,6 +4,37 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v1.0.1 第三轮探针缺口补齐
+
+- **新增 12 类危险命令模式** — Windows `del /s`（任意 flag 顺序）与 `rmdir /s` 别名 `rd /s`；`git push +refspec` 与 `git rebase -i`；`podman rmi`；`terraform destroy`；`pkill`、`killall`、`kill -9|-f|-KILL`；`curl`/`wget` 管道到 `bash|zsh|ksh|dash|fish|sh`；SQL 客户端（`psql`/`psqlcmd`/`mysql`/`sqlite3`/`sqlite`）以引号形式传入 `DROP`；`env` 作为命令包装器。
+- **`git clean -fd` 收窄** — 带路径限定的形式如 `git clean -fd -- build/` 不再被拦（例行构建目录清理），仅无参数形式仍警告。
+- **`env` 加入 WRAPPER_RULES** — `env rm -rf /` 的 payload 与 `sh -c` / `bash -lc` 同等处理。
+- **`stripEnvAssignments` 加固** — `env FOO=bar -- rm -rf /` 中残留的 `--` end-of-options 标记在匹配前被剥离。
+- **SQL-in-quotes 检查** — 引号内的 `DROP TABLE` / `TRUNCATE` 在 masked 字符串中会被空格替换而丢失；新增 raw expanded 检查捕获 `psql -c 'DROP DATABASE x;'`，且不误报 `echo "DROP TABLE never"` 这类无害文本。
+- **新增 10 条 safe 前缀白名单** — `node --version`、`node -v`、`echo`、`date`、`docker ps`、`docker images`、`docker version`、`docker stats`、`kubectl get`、`kubectl describe`。
+- **`npm test` / `npm run build` 不算 safe** — 它们能执行 package.json 脚本且有 side effects，故意不加入白名单。
+- **回归覆盖** — 新增 3 个测试锁定探针用例：27 条危险变体被拦、23 条日常无害命令不被拦、12 条 safe 前缀仍归 safe。
+- **门禁状态** — 140/140 tests、0 typecheck error、0 audit 漏洞、20/20 eval 一致、真实 Jev-1.13.0 冒烟 968ms。
+
+## v1.0.0 架构反转
+
+模型指挥 Jev，Jev 不再代替模型决策。原本会在后台拦截模型的五个模块 —— task router、tool gate、compaction、memory gate、failure classifier —— 现已全部收敛为模型主动调用的 `jev_*` 工具或确定性规则。实现这一架构反转的七个工具是 `jev_assess_task`、`jev_assess_risk`、`jev_diagnose_failure`、`jev_request_model_tier`、`jev_prune_context`、`jev_memory_add` 和 `jev_rank`。
+
+确定性安全底线由 wrapper-aware shell 模式表强制，已覆盖 `sh -c`、`bash -lc`、`python -c`、`node -e`、`cmd /c`、`powershell -Command`、`env`、`eval`、`exec`、`nohup`、`timeout`、`nice`、`$IFS` 混淆、ANSI-C 引号等绕过手法。
+
+### v0.9.1 Shell 安全与 Judge 契约修复
+
+- **wrapper-aware 危险检测** — 隐藏于 `sh -c '...'`、`bash -lc '...'`、`python -c "..."`、`node -e '...'`、`cmd /c ...`、`powershell -Command ...`、`eval`、`exec`、`command`、`nohup`、`nice`、`timeout`、`env`、`$IFS` 空白混淆、ANSI-C `$'...'` 引号内的破坏性命令现均被捕获。
+- **团队级破坏性命令** — `git filter-branch`、`git filter-repo`、`git branch -D`、`git push --force`、`git push -f`、`sudo`、`npm publish`、`npx --yes`、`kubectl delete`、`docker rm`、`docker volume rm`、`docker system prune`、`podman rm`、`podman rmi`、`DROP TABLE/DATABASE/INDEX/SCHEMA`、`TRUNCATE TABLE`、`chmod -R`、`chown -R`、`dd of=/dev/...`、`mkfs`、`fdisk`、`sgdisk`、`format`、`diskpart`、`Remove-Item -Recurse/-Force`、`del /s`、`rmdir /s`、`find -delete/-exec/-ok/-fprint`。
+- **inert `cat` heredoc** — `cat <<EOF ... EOF` 内的内容是数据而非命令；wrapper 展开现跳过其内容，但带引号定界符、Tab 缩进标记、命令替换及后续链式命令仍保持可见。
+- **失败计数与 Jev 解耦** — 即使 `retryJudge.enabled=false` 或 Jev 后端不可用，本地失败计数器仍会递增，同族失败熔断照常生效。
+- **memory gate 仅在 auto 模式生效** — 仅在 `memoryGate.mode: "auto"` 且 `retryJudge.appendToResult: true` 时持久化失败记忆；advisory 模式保持静默。
+- **`/jev decision on|off`** — 无需编辑配置即可切换 Decision Copilot。
+- **`toolGate.mode: "advisory"`** — 确定性危险模式仅警告不拦截；安全底线仍在工作。
+- **`router.mode: "tier-only"`** — Jev 推断 tier 但仅记录与公告，绝不切换模型。
+- **第二轮缺口补齐** — shell 绕过变体（`podman rm -f`、Python 删除、`subprocess` argv 数组）、失败计数解耦、文档漂移、14 工具计数。
+- **门禁状态** — 140/140 tests、0 typecheck error、0 audit 漏洞、20/20 eval 一致。
+
 ## v0.9 模型路由优先级与思考等级
 
 - **同等级多模型** — `router.models.<tier>` 可配置有序候选数组，按顺序尝试；首选模型不存在或认证不可用时自动使用后续候选
