@@ -17,7 +17,7 @@ import { recordBenignFailureSkipped } from "../stats/savings.js";
 export function setupFailureClassifier(pi: ExtensionAPI): void {
   pi.on("tool_result", async (event, ctx) => {
     const config = loadConfig();
-    if (!config.enabled || !config.retryJudge.enabled) return;
+    if (!config.enabled) return;
 
     const toolName = event.toolName;
     const toolInput = (event.input ?? {}) as Record<string, unknown>;
@@ -42,6 +42,12 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
     const signature = generateFailureSignature(toolName, inputSummary, errorExcerpt);
 
     const assessment = { signature, actionKey, commandCategory, toolName, inputSummary, errorExcerpt, sameFailureCount };
+    // Turning off retry judgments disables annotations and the circuit breaker,
+    // not observation of failures needed by routing and diagnostics.
+    if (!config.retryJudge.enabled) {
+      recordUnclassifiedFailure(assessment);
+      return;
+    }
     const repeatVerdict = evaluateRepeatedFailure(sameFailureCount);
     if (repeatVerdict) {
       return appendAssessment(event, {

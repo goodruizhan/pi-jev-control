@@ -64,6 +64,9 @@ test("interpreter one-liners that shell out are caught", () => {
     "sh -c \"bash -c 'rm -rf /'\"",
     "sh -c 'echo hi; rm -rf /'",
     "sh -c 'echo hi && rm -rf /'",
+    'python3 -c "import os; os.unlink(\'/etc/passwd\')"',
+    'python3 -c "import os; os.remove(\'/etc/passwd\')"',
+    'python3 -c "import subprocess; subprocess.run([\'rm\',\'-rf\',\'/\'])"',
   ];
   for (const command of cases) {
     assert.equal(classifyShellCommand(command), "dangerous", `should be dangerous: ${command}`);
@@ -100,6 +103,11 @@ test("auto-approval, cluster and container teardown are dangerous", () => {
     "docker volume rm data",
     "docker system prune -af",
     "podman rm -f container1",
+    "podman rm container1",
+    "podman rm -fv container1",
+    "docker rm container1",
+    "docker rm -v container1",
+    "docker rm -fv container1",
   ]) {
     assert.equal(classifyShellCommand(command), "dangerous", `should be dangerous: ${command}`);
   }
@@ -134,6 +142,8 @@ test("harmless commands are not flagged by the wrapper expansion", () => {
     'echo "hello; rm -rf /"',
     'echo \'rm -rf / is dangerous\'',
     "echo rm -rf /",
+    'echo "os.remove(\'/etc/passwd\')"',
+    'echo "subprocess.run([\'rm\',\'-rf\',\'/\'])"',
     "grep -r \"rm -rf\" src/",
     'printf "%s" "rm -rf /"',
     "git push --follow-tags origin main",
@@ -163,6 +173,21 @@ test("harmless commands are not flagged by the wrapper expansion", () => {
       `must NOT be dangerous: ${command}`,
     );
   }
+});
+
+test("inert cat heredocs are data; substitutions and later commands remain visible", () => {
+  for (const command of [
+    "cat <<EOF\nrm -rf /\nEOF",
+    'cat <<"EOF"\ndocker rm -f foo\nEOF',
+    "cat <<-EOF\n\trm -rf /\n\tEOF",
+  ]) assert.notEqual(classifyShellCommand(command), "dangerous", command);
+  for (const command of [
+    "cat <<EOF\nrm -rf /\nEOF\nrm -rf /",
+    "cat <<EOF\n$(rm -rf /)\nEOF",
+    "cat <<EOF\n`rm -rf /`\nEOF",
+    "cat <<EOF | sh\nrm -rf /\nEOF",
+    "cat <<EOF\nrm -rf /", // unclosed marker: fail conservatively
+  ]) assert.equal(classifyShellCommand(command), "dangerous", command);
 });
 
 test("safe prefix classification is unchanged", () => {
@@ -293,13 +318,19 @@ test("enforce mode blocks wrapper bypasses end to end", async () => {
     "git push --force origin main",
     "npx --yes some-script",
     "kubectl delete pod foo",
+    "podman rm container1",
+    "docker rm -v container1",
+    "docker rm -fv container1",
+    'python3 -c "import os; os.unlink(\'/etc/passwd\')"',
+    'python3 -c "import os; os.remove(\'/etc/passwd\')"',
+    'python3 -c "import subprocess; subprocess.run([\'rm\',\'-rf\',\'/\'])"',
   ]) {
     const result = await handler({ toolName: "bash", input: { command } }, ctx);
     assert.equal(result?.block, true, `${command} must be blocked`);
   }
-  assert.equal(confirmations(), 10);
+  assert.equal(confirmations(), 16);
 
-  if (originalKey === undefined) delete process.env.TYPESSAFE_API_KEY;
+  if (originalKey === undefined) delete process.env.TYPESAFE_API_KEY;
   else process.env.TYPESAFE_API_KEY = originalKey;
   resetClient();
 });

@@ -514,7 +514,7 @@ export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
   /(?:^|[;&|]\s*)chown\s+-(?:[a-zA-Z]*[rR][a-zA-Z]*\s+)/i,
   // ── container / cluster teardown ───────────────────────────────────
   /(?:^|[;&|]\s*)kubectl\s+delete\b/i,
-  /(?:^|[;&|]\s*)(?:docker|podman)\s+(?:rm\b[^\r\n;&|]*\s-f\b|volume\s+rm\b|system\s+prune\b)/i,
+  /(?:^|[;&|]\s*)(?:docker|podman)\s+(?:rm\b|volume\s+rm\b|system\s+prune\b)/i,
   // ── SQL teardown (unanchored: SQL keywords are case/statement agnostic)
   /(?:^|\s)(?:DROP\s+(?:TABLE|DATABASE|INDEX|SCHEMA)\b|TRUNCATE\s+TABLE\b)/i,
 ];

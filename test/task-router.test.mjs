@@ -355,10 +355,13 @@ test("model-initiated tier request switches, audits, and applies the risk floor"
     });
     assert.equal(raised.success, true);
     assert.equal(raised.requestedTier, "strong");
+    assert.equal(raised.wantedTier, "cheap");
     assert.equal(raised.floorApplied, true);
     assert.deepEqual(switched, ["strong"]);
     assert.equal(runtimeState.lastTaskTier, "strong");
     assert.equal(runtimeState.lastRouteAudit.source, "model-request");
+    const firstId = runtimeState.lastRouteAudit.requestId;
+    assert.ok(firstId > 0);
     assert.match(runtimeState.lastRouteAudit.reason, /risk floor/);
 
     // A plain request goes through as asked.
@@ -369,6 +372,7 @@ test("model-initiated tier request switches, audits, and applies the risk floor"
     assert.equal(plain.success, true);
     assert.equal(plain.requestedTier, "cheap");
     assert.equal(plain.floorApplied, false);
+    assert.ok(runtimeState.lastRouteAudit.requestId > firstId);
     assert.deepEqual(switched, ["strong", "cheap"]);
 
     // Router off: refused, nothing switches.

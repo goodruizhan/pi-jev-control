@@ -160,6 +160,9 @@ const WRAPPER_RULES: WrapperRule[] = [
  */
 const INTERPRETER_DESTRUCTIVE: RegExp[] = [
   /shutil\.rmtree\s*\(\s*[^)]*[,)]/i,
+  /(?:^|[;&|]\s*)python[\w.]*\s+-c\b[^\r\n]*\bos\.(?:unlink|remove)\s*\(/i,
+  // subprocess accepts argv arrays as well as shell strings.
+  /(?:^|[;&|]\s*)python[\w.]*\s+-c\b[^\r\n]*\bsubprocess\.(?:run|call|check_call|check_output|Popen)\s*\(\s*\[\s*["']rm["']\s*,\s*["']-[a-zA-Z]*[rf][a-zA-Z]*["']/i,
   /os\.system\s*\(\s*["'][^"']*(?:\brm\s+-[a-zA-Z]*[rf]\b|unlink|drop\s+table)/i,
   /subprocess\.\w+\s*\(\s*["'][^"']*(?:\brm\s+-[a-zA-Z]*[rf]\b|unlink)/i,
   // `child_process.exec('rm -rf /')` and `require('child_process').exec(...)`
@@ -256,6 +259,28 @@ function expandWrappers(command: string): string[] {
   return blocks;
 }
 
+// A plain `cat` heredoc is data, not another shell command. Only mask a
+// complete, standalone cat statement; pipes, substitutions, and incomplete
+// delimiters stay visible (conservative: they may execute the body).
+function maskInertCatHeredocs(command: string): string {
+  const lines = command.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const header = lines[i].replace(/\r$/, "");
+    const match = /^[ \t]*cat(?:[ \t]+(?:-[\w-]+|[\w./-]+))*[ \t]+<<(-?)(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2[ \t]*$/.exec(header);
+    if (!match) continue;
+    const [, tabsAllowed, , marker] = match;
+    let end = i + 1;
+    while (end < lines.length && (tabsAllowed ? lines[end].replace(/^\t*/, "") : lines[end]).replace(/\r$/, "") !== marker) end++;
+    if (end === lines.length) continue;
+    const body = lines.slice(i + 1, end).join("\n");
+    // Even an unquoted heredoc can perform shell substitutions.
+    if (!match[2] && (/\$\(|`/.test(body))) { i = end; continue; }
+    for (let j = i + 1; j < end; j++) lines[j] = " ";
+    i = end;
+  }
+  return lines.join("\n");
+}
+
 function stripEnvAssignments(segment: string): string {
   return segment.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*|^\*\s+/, "").trim();
 }
@@ -292,7 +317,7 @@ function maskQuoted(command: string): string {
  * Check if a bash command matches known dangerous patterns.
  */
 export function isDangerousBashCommand(command: string): boolean {
-  return isSegmentDangerous(command.trim(), 0);
+  return isSegmentDangerous(maskInertCatHeredocs(command).trim(), 0);
 }
 
 function isSegmentDangerous(segment: string, depth: number): boolean {
@@ -310,6 +335,10 @@ function isSegmentDangerous(segment: string, depth: number): boolean {
     if (pattern.test(expanded)) return true;
   }
   if (depth >= MAX_UNWRAP_DEPTH) return false;
+  // Unquoted heredocs (and ordinary shell lines) can execute command substitutions.
+  for (const substitution of expanded.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)) {
+    if (isSegmentDangerous(substitution[1] ?? substitution[2], depth + 1)) return true;
+  }
   for (const block of expandWrappers(expanded)) {
     for (const nested of splitSegments(block)) {
       if (isSegmentDangerous(nested, depth + 1)) return true;

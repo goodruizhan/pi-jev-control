@@ -275,9 +275,21 @@ pi install git:github.com/goodruizhan/pi-jev-control
 /jev toolgate enforce
 ```
 
-在 `enforce` 严格模式中，`confirmOnLowConfidence` 控制低置信度确认。如需完全停止工具门控评估，可将 `toolGate.enabled` 设为 `false`。
+在 `enforce` 严格模式中，确定性规则识别的危险命令需要确认。`confirmOnLowConfidence` 只影响模型主动调用 `jev_assess_risk` 时返回的策略，不控制自动工具门控弹窗。如需完全停止工具门控评估，可将 `toolGate.enabled` 设为 `false`。
 
 ## 自定义工具
+
+模型主动调用的判断工具：
+
+- `jev_assess_task` — 评估任务复杂度与模型等级
+- `jev_assess_risk` — 评估操作风险并返回确定性命令策略
+- `jev_diagnose_failure` — 分析失败并建议下一步
+- `jev_request_model_tier` — 明确请求切换模型等级
+- `jev_prune_context` — 请求上下文裁剪计划
+- `jev_memory_add` — 保存持久记忆
+- `jev_rank` — 对候选项排序
+
+其他工具：
 
 - `jev_search_code` — 使用 rg 与判断排序查找与任务相关的代码（ripgrep 解析顺序：`PI_JEV_RG_PATH` → Pi 自带 `~/.pi/agent/bin/rg` → PATH）
 - `jev_select_skills` — 为当前任务选择相关的 Pi 技能
@@ -297,6 +309,8 @@ pi install git:github.com/goodruizhan/pi-jev-control
 - `/jev route cheap|medium|strong` — 为下一条实质性输入指定初始等级
 - `/jev language en|zh-CN` — 切换并持久保存界面语言
 - `/jev router on|off` — 开启或关闭任务路由器
+- `/jev router mode rules-only|advisory|tier-only|set-model|off` — 选择路由模式
+- `/jev decision on|off` — 开启或关闭决策副驾驶
 - `/jev toolgate on|off` — 开启或关闭工具门控
 - `/jev toolgate advisory|enforce` — 在非阻塞辅助模式和严格执行模式之间切换
 - `/jev retry on|off` — 开启或关闭重试判断器
@@ -318,11 +332,11 @@ pi install git:github.com/goodruizhan/pi-jev-control
 ## 开发
 
 ```bash
-npm install
+npm install --include=dev
 npm run typecheck
 npm test
 npm run test:jev # 需要 TYPESAFE_API_KEY
 pi -e ./extensions/index.ts
 ```
 
-随后在 Pi 中运行 `/jev probe`，验证 Jev 连通性。
+Pi 安装的 Git 副本可能只安装生产依赖（没有 `tsc`）。若要在**安装副本**就地测试，请先在该目录运行 `npm install --include=dev --ignore-scripts`；开发编译与测试需要 TypeScript。随后在 Pi 中运行 `/jev probe`，验证 Jev 连通性。

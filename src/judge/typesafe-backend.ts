@@ -88,7 +88,7 @@ export class TypeSafeBackend implements JudgmentBackend {
         {
           timeout: options.timeoutMs ?? this.timeoutMs,
           signal: options.signal,
-          // Disable SDK retry for fast-fail; the retry-judge module owns retry policy.
+          // Disable SDK retry for fast-fail; the failure-classifier owns retry policy.
           retry: { maxRetries: 0 },
         },
       );

@@ -223,6 +223,7 @@ export interface ModelTierRequestResult extends ModelRouteResult {
   requestedTier: NamedTier;
   /** True when deterministic risk features raised the model's own request. */
   floorApplied: boolean;
+  wantedTier: TaskTier;
   riskFeatures: string[];
 }
 
@@ -234,6 +235,8 @@ export interface ModelTierRequestResult extends ModelRouteResult {
  * 4000-character summary). Risk features can still raise the requested tier, which is
  * the one place where a rule overrides the model — and it can only go up.
  */
+let modelRequestSequence = 0;
+
 export async function requestModelTier(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -244,7 +247,7 @@ export async function requestModelTier(
   const wanted: TaskTier = request.tier === "unknown" ? config.router.fallbackTier : request.tier;
   const requested = tierAtLeast(wanted, risk.minimumTier) as NamedTier;
   const floorApplied = requested !== wanted;
-  const base = { requestedTier: requested, floorApplied, riskFeatures: risk.features };
+  const base = { requestedTier: requested, wantedTier: wanted, floorApplied, riskFeatures: risk.features };
 
   if (!config.enabled || !config.router.enabled) {
     return { success: false, tier: requested, reason: "router disabled", ...base };
@@ -255,7 +258,7 @@ export async function requestModelTier(
 
   const selected = await routeModelDetailed(pi, ctx, requested);
   const audit = {
-    requestId: 0,
+    requestId: ++modelRequestSequence,
     timestamp: Date.now(),
     source: "model-request",
     rawChoice: wanted,

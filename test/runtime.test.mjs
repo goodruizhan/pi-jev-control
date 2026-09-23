@@ -127,6 +127,11 @@ test("failure counting survives a backend outage, and silent mode makes no autom
     assert.equal((await gate({ toolName: "write", input: { path: "annotated-missing.ts" } }, {})).block, true);
 
     config.retryJudge.enabled = false;
+    assert.equal(await classify(event("read", "judge-off-missing.ts"), {}), undefined);
+    assert.equal(getFailureCountByActionKey(getActionKey("read", { path: "judge-off-missing.ts" })), 1,
+      "disabled retry judgment must not disable local failure observation");
+    assert.equal(calls, 1, "disabled retry judgment must not contact the backend");
+    assert.equal(await gate({ toolName: "read", input: { path: "judge-off-missing.ts" } }, {}), undefined);
     assert.equal(await gate({ toolName: "write", input: { path: "annotated-missing.ts" } }, {}), undefined,
       "turning off the retry judge must also turn off its circuit breaker");
   } finally {

@@ -359,9 +359,21 @@ Switch modes for the current session:
 /jev toolgate enforce
 ```
 
-In `enforce` mode, `confirmOnLowConfidence` controls low-confidence prompts. Set `toolGate.enabled` to `false` to disable Tool Gate evaluation entirely.
+In `enforce` mode, deterministic dangerous commands require confirmation. `confirmOnLowConfidence` only affects the policy reported by the model-invoked `jev_assess_risk` tool; it does not control automatic Tool Gate prompts. Set `toolGate.enabled` to `false` to disable Tool Gate evaluation entirely.
 
 ## Custom Tools
+
+Model-invoked judgment tools:
+
+- `jev_assess_task` — Assess task complexity and suggest a model tier
+- `jev_assess_risk` — Assess an operation and report the deterministic command policy
+- `jev_diagnose_failure` — Classify a failure and suggest the next action
+- `jev_request_model_tier` — Explicitly request a model tier change
+- `jev_prune_context` — Request a context pruning plan
+- `jev_memory_add` — Save a durable memory entry
+- `jev_rank` — Rank an explicit set of candidates
+
+Additional tools:
 
 - `jev_search_code` — Find code relevant to a task using rg + judgment ranking (ripgrep is resolved via `PI_JEV_RG_PATH`, then Pi's bundled `~/.pi/agent/bin/rg`, then PATH)
 - `jev_select_skills` — Select relevant Pi skills for the current task
@@ -381,6 +393,8 @@ In `enforce` mode, `confirmOnLowConfidence` controls low-confidence prompts. Set
 - `/jev route cheap|medium|strong` — Set the next substantive input's initial tier
 - `/jev language en|zh-CN` — Switch and persist the UI language
 - `/jev router on|off` — Toggle Task Router
+- `/jev router mode rules-only|advisory|tier-only|set-model|off` — Select routing mode
+- `/jev decision on|off` — Toggle Decision Copilot
 - `/jev toolgate on|off` — Toggle Tool Gate
 - `/jev toolgate advisory|enforce` — Switch between non-blocking assistance and strict enforcement
 - `/jev retry on|off` — Toggle Retry Judge
@@ -402,11 +416,11 @@ In `enforce` mode, `confirmOnLowConfidence` controls low-confidence prompts. Set
 ## Development
 
 ```bash
-npm install
+npm install --include=dev
 npm run typecheck
 npm test
 npm run test:jev # requires TYPESAFE_API_KEY
 pi -e ./extensions/index.ts
 ```
 
-Then in Pi: `/jev probe` to verify Jev connectivity.
+Pi's installed Git copy may contain only production dependencies (no `tsc`). To run tests **in that copy**, first run `npm install --include=dev --ignore-scripts` there; development builds/tests require TypeScript. Then in Pi: `/jev probe` to verify Jev connectivity.

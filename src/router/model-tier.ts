@@ -34,6 +34,7 @@ export async function requestModelTierTool(
     success: false,
     tier: requested as TaskTier,
     requestedTier: requested,
+    wantedTier: requested,
     floorApplied: false,
     riskFeatures: [] as string[],
   };
@@ -102,8 +103,8 @@ export function setupModelTierTool(pi: ExtensionAPI): void {
 
       if (result.floorApplied) {
         lines.push(tr(
-          `Risk features raised the request from ${result.tier} to ${result.requestedTier}: ${result.riskFeatures.join(", ")}`,
-          `风险特征把请求从 ${result.tier} 上调到 ${result.requestedTier}：${result.riskFeatures.join(", ")}`,
+          `Risk features raised the request from ${result.wantedTier} to ${result.requestedTier}: ${result.riskFeatures.join(", ")}`,
+          `风险特征把请求从 ${result.wantedTier} 上调到 ${result.requestedTier}：${result.riskFeatures.join(", ")}`,
         ));
       } else if (result.riskFeatures.length > 0) {
         lines.push(tr(`Risk features detected: ${result.riskFeatures.join(", ")}`, `检测到风险特征：${result.riskFeatures.join(", ")}`));

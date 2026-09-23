@@ -191,6 +191,10 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (/^route (cheap|medium|strong)$/.test(arg)) {
+        if (!config.router.enabled || config.router.mode === "off") {
+          ctx.ui.notify(tr("Router is disabled; enable it before setting a route override.", "路由器已关闭；请先开启再指定等级。"), "warning");
+          return;
+        }
         const tier = arg.split(" ")[1] as "cheap" | "medium" | "strong";
         setNextRouteOverride(tier);
         ctx.ui.notify(tr(
@@ -251,6 +255,12 @@ export default function (pi: ExtensionAPI) {
           `重试判断向工具结果追加评估：${action === "on" ? "开启" : "关闭"}`,
         ), "info");
         ctx.ui.notify(tr("Note: Use /reload for persistent changes.", "注意：如需持久化，请修改配置后使用 /reload。"), "info");
+        return;
+      }
+
+      // /jev decision on|off — toggle Decision Copilot
+      if (arg.startsWith("decision ")) {
+        toggleModule(arg.split(" ")[1], "decisionCopilot", config, ctx);
         return;
       }
 
@@ -442,8 +452,8 @@ export default function (pi: ExtensionAPI) {
       // Unknown subcommand
       ctx.ui.notify(
         tr(
-          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, route cheap|medium|strong, language en|zh-CN, toolgate advisory|enforce|on|off, router on|off, router mode rules-only|advisory|set-model|off, retry on|off, retry append on|off, contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, memory mode suggest|auto, compact on|off|status|plan|clear, compaction mode off|suggest|auto, reset`,
-          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、route cheap|medium|strong、language en|zh-CN、toolgate advisory|enforce|on|off、router on|off、router mode rules-only|advisory|set-model|off、retry on|off、retry append on|off、contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、memory mode suggest|auto、compact on|off|status|plan|clear、compaction mode off|suggest|auto、reset`,
+          `Unknown /jev command: "${arg}"\nAvailable: status, probe, stats, savings, last, route cheap|medium|strong, language en|zh-CN, toolgate advisory|enforce|on|off, router on|off, router mode ${ROUTER_MODES.join("|")}, decision on|off, retry on|off, retry append on|off, contextgate/skillgate/agentrouter/reviewgate/guirouter on|off, memory on|off|clear|stats|resolve <id>, memory mode suggest|auto, compact on|off|status|plan|clear, compaction mode off|suggest|auto, reset`,
+          `未知的 /jev 命令：“${arg}”\n可用命令：status、probe、stats、savings、last、route cheap|medium|strong、language en|zh-CN、toolgate advisory|enforce|on|off、router on|off、router mode ${ROUTER_MODES.join("|")}、decision on|off、retry on|off、retry append on|off、contextgate/skillgate/agentrouter/reviewgate/guirouter on|off、memory on|off|clear|stats|resolve <id>、memory mode suggest|auto、compact on|off|status|plan|clear、compaction mode off|suggest|auto、reset`,
         ),
         "info",
       );
@@ -543,7 +553,7 @@ async function runProbe(ctx: import("@earendil-works/pi-coding-agent").Extension
 
 function toggleModule(
   action: string | undefined,
-  moduleName: "router" | "toolGate" | "retryJudge" | "contextGate" | "skillGate" | "agentRouter" | "memoryGate" | "reviewGate" | "guiRouter",
+  moduleName: "router" | "toolGate" | "retryJudge" | "decisionCopilot" | "contextGate" | "skillGate" | "agentRouter" | "memoryGate" | "reviewGate" | "guiRouter",
   config: ReturnType<typeof loadConfig>,
   ctx: import("@earendil-works/pi-coding-agent").ExtensionCommandContext,
 ): void {
@@ -552,6 +562,7 @@ function toggleModule(
     if (moduleName === "router") config.router.enabled = action === "on";
     else if (moduleName === "toolGate") config.toolGate.enabled = action === "on";
     else if (moduleName === "retryJudge") config.retryJudge.enabled = action === "on";
+    else if (moduleName === "decisionCopilot") config.decisionCopilot.enabled = action === "on";
     else if (moduleName === "contextGate") config.contextGate.enabled = action === "on";
     else if (moduleName === "skillGate") config.skillGate.enabled = action === "on";
     else if (moduleName === "agentRouter") config.agentRouter.enabled = action === "on";
@@ -565,9 +576,11 @@ function toggleModule(
                    moduleName === "skillGate" ? "Skill Gate" :
                    moduleName === "agentRouter" ? "Agent Router" :
                    moduleName === "memoryGate" ? "Memory Gate" : "Task Router";
-    const finalLabel = moduleName === "reviewGate" ? "Review Gate" :
+    const finalLabel = moduleName === "decisionCopilot" ? "Decision Copilot" :
+                       moduleName === "reviewGate" ? "Review Gate" :
                        moduleName === "guiRouter" ? "GUI Router" : label;
-    const chineseLabel = moduleName === "toolGate" ? "工具门控" :
+    const chineseLabel = moduleName === "decisionCopilot" ? "决策副驾驶" :
+                         moduleName === "toolGate" ? "工具门控" :
                          moduleName === "retryJudge" ? "重试判断" :
                          moduleName === "contextGate" ? "上下文门控" :
                          moduleName === "skillGate" ? "技能门控" :

@@ -16,9 +16,9 @@
 |---|---|
 | 版本 | 1.0.0（架构反转完成） |
 | 基线提交 | v1.0.0 提交以 `git log -1` 为准 |
-| 测试 | 108/108 通过（`npm test`） |
+| 测试 | 运行 `npm test`，以当前输出为准（第二轮基线 136/136） |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
-| 依赖 | 无第三方依赖；`@typesafe-ai/sdk` 只在 1 个文件里 import |
+| 依赖 | 运行依赖 `@typesafe-ai/sdk`、`typebox`；开发依赖 `typescript`（详见 `package.json`） |
 
 ### 1.1 控制方向（v1.0.0 起，最重要的一条）
 
@@ -36,7 +36,9 @@
 | `jev_memory_add` | 唯一写记忆的入口（无需过门） | `src/memory/memory-add.ts` |
 | `jev_rank` | 排序原语：词法预筛 + Jev 重排 | `src/judge/rank.ts` |
 
-配置默认值因此全部改了：`router.mode="rules-only"`、`compaction.autoMode="off"`、
+另外 7 个保留的模型主动工具：`jev_search_code`、`jev_select_skills`、`jev_route_agent`、`jev_memory_search`、`jev_review_check`、`jev_choose_ui_action`、`jev_decide_batch`。共注册 14 个 `jev_*` 工具。
+
+路由兼容模式包含 `rules-only`、`advisory`、`tier-only`、`set-model`、`off`，由 `ROUTER_MODES` 统一校验。配置默认值因此全部改了：`router.mode="rules-only"`、`compaction.autoMode="off"`、
 `memoryGate.enabled=false` + `mode="suggest"`、`retryJudge.appendToResult=false`。
 想恢复旧行为：`router.mode="set-model"`、`compaction.autoMode="auto"`。
 
@@ -54,7 +56,7 @@
 
 **改 `src/config.ts` 时永远不要同时改 `resetConfigToDefaults()`**——它是测试的地基。
 
-**部署位置（易混淆）**：pi 加载的是安装包副本 `~/.pi/agent/git/github.com/goodruizhan/pi-jev-control`（直接加载 TS 源码，不需要 dist），**不是** `D:\Project\...` 开发副本。两者版本可能差好几个大版本。升级：`pi update --extensions`（安装的是无 ref 锁定的 git 包，reconcile 会拉最新 main 并自动 `npm install`），然后重启 pi。
+**部署位置（易混淆）**：pi 加载的是安装包副本 `~/.pi/agent/git/github.com/goodruizhan/pi-jev-control`（直接加载 TS 源码，不需要 dist），**不是** `D:\Project\...` 开发副本。两者版本可能差好几个大版本。升级：`pi update --extensions`（安装的是无 ref 锁定的 git 包，reconcile 会拉最新 main 并自动 `npm install`），然后重启 pi。安装副本通常没有开发依赖 `typescript`；若要在该目录就地运行 `npm test`，先运行 `npm install --include=dev --ignore-scripts`。
 
 ## 3. 架构
 
@@ -81,7 +83,7 @@ src/judge/          ← 中立判断核心（v0.6 新增，替换旧 src/jev/）
   judgment/         diagnose-failure（jev_diagnose_failure）
   memory/           memory-add（jev_memory_add）、memory-gate、retrieval、store
   gates/            tool-gate、context-gate（jev_search_code）、skill-gate
-  judgment/         failure-classifier、retry-judge
+  judgment/         failure-classifier（本地计数/可选注记）、diagnose-failure
   memory/           memory-gate、retrieval
   compaction/       pruner、epoch、context-hook
   review/           review-gate
@@ -117,7 +119,7 @@ interface JudgmentBackend {
 2. **两层答案防线**：facade 先拒绝缺失、越界、类型错误或候选外答案并触发 fallback；`choiceOf(answer)` 再把模块侧异常形状收窄成 `{choice:"unknown", confidence:0}`，而不是崩。
 3. **向后兼容**：旧版顶层 `jev.model` / `jev.timeoutMs` 仍然有效，`config.ts` 的 `normalizeJudgmentConfig()` 会把它补进 `judgment.backends.typesafe`。老用户零迁移。
 4. **advisory 是默认门控模式**：`toolGate.mode: "advisory"` 时**从不弹确认框、从不拦截**，只发通知（且 `errors-only` 下通知也被抑制）。只有改成 `"enforce"` 才有 `ctx.ui.confirm()`。用户明确要求不打断工作流。
-5. **失败计数与注记**：`retryJudge.enabled` 总控失败计数和熔断；`appendToResult: false`（默认）只做本地计数，不自动请求 Jev、不改工具输出。设为 `true` 才调用 Jev 并附上标明插件来源的注记；后端不可用也必须计数。自动持久化失败记忆还需开启注记并设置 `memoryGate.mode: "auto"`，`suggest` 不写。
+5. **失败计数与注记**：失败事件始终本地计数；`retryJudge.enabled=false` 关闭自动注记、Jev 分类和重试熔断，但不抹掉失败历史；`appendToResult: false`（默认）只做本地计数，不自动请求 Jev、不改工具输出。设为 `true` 才调用 Jev 并附上标明插件来源的注记；后端不可用也必须计数。自动持久化失败记忆还需开启注记并设置 `memoryGate.mode: "auto"`，`suggest` 不写。
 6. **模型候选与思考等级（v0.9）**：`router.models.<tier>` 接受单个 `ModelSpec` 或按优先级排列的数组；`thinking` 在模型选中后调用 `pi.setThinkingLevel()`。同一模型命中不同 tier 时也必须重新应用 thinking，不能因为模型未变化就提前返回。候选回退仅覆盖模型未注册、缺少认证或 `setModel()` 抛错，不负责已开始请求后的 429/网络重试。
 
 ## 5. 环境坑（踩过的，别再踩）
