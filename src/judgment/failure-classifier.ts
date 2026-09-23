@@ -41,15 +41,25 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
     );
     const signature = generateFailureSignature(toolName, inputSummary, errorExcerpt);
 
+    const assessment = { signature, actionKey, commandCategory, toolName, inputSummary, errorExcerpt, sameFailureCount };
     const repeatVerdict = evaluateRepeatedFailure(sameFailureCount);
     if (repeatVerdict) {
       return appendAssessment(event, {
-        signature, actionKey, commandCategory, toolName, inputSummary, errorExcerpt,
-        failureType: "repeated", recommendedAction: "do_not_retry", sameFailureCount, source: "local-rule",
+        ...assessment, failureType: "repeated", recommendedAction: "do_not_retry", source: "local-rule",
       });
     }
 
-    if (!isJudgeAvailable()) return appendUnavailableAssessment(event, "unavailable", "Jev API unavailable");
+    // With no annotation requested, classification cannot inform the model. Count
+    // the failure locally instead of making an automatic (and possibly slow) Jev call.
+    if (!config.retryJudge.appendToResult) {
+      recordUnclassifiedFailure(assessment);
+      return;
+    }
+
+    if (!isJudgeAvailable()) {
+      recordUnclassifiedFailure(assessment);
+      return appendUnavailableAssessment(event, "unavailable", "Jev API unavailable");
+    }
 
     const result = await judge(
       {
@@ -69,11 +79,13 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
 
     if (!result.ok) {
       console.warn("[pi-jev-control] Failure Judge Jev call failed:", result.errorType, result.error);
+      recordUnclassifiedFailure(assessment);
       return appendUnavailableAssessment(event, result.errorType, result.error);
     }
 
     const answeredByRules = backendTypeOf(result.backend) === "rules";
     if (answeredByRules) {
+      recordUnclassifiedFailure(assessment);
       return appendUnavailableAssessment(event, "unavailable", "model backends unavailable — deterministic rules fallback");
     }
 
@@ -85,6 +97,13 @@ export function setupFailureClassifier(pi: ExtensionAPI): void {
       source: "jev",
     });
   });
+}
+
+type FailureIdentity = Pick<AssessmentInput,
+  "signature" | "actionKey" | "commandCategory" | "toolName" | "inputSummary" | "errorExcerpt">;
+
+function recordUnclassifiedFailure(assessment: FailureIdentity): void {
+  recordFailure({ ...assessment, failureType: "unknown", recommendedAction: "unknown" });
 }
 
 interface AssessmentInput {

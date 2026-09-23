@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { getActionKey, getCommandCategory } from "../dist/src/action-context.js";
 import { isBenignShellOutcome, isFailureEvent, setupFailureClassifier } from "../dist/src/judgment/failure-classifier.js";
 import { setupToolGate } from "../dist/src/gates/tool-gate.js";
-import { loadConfig } from "../dist/src/config.js";
+import { loadConfig, resetConfigToDefaults } from "../dist/src/config.js";
 import { resetJudgeBackends as resetClient } from "../dist/src/judge/registry.js";
 import {
   getFailureCountByActionKey,
@@ -87,6 +87,54 @@ test("appendToResult=false keeps failure records but leaves tool output untouche
   assert.match(texts, /File not found/);
 
   resetState();
+});
+
+test("failure counting survives a backend outage, and silent mode makes no automatic model call", async () => {
+  resetConfigToDefaults();
+  resetClient();
+  resetState();
+  const config = loadConfig();
+  config.judgment.backend = "test-offline";
+  config.judgment.backends["test-offline"] = { type: "openai-compatible", model: "small-test", baseUrl: "http://localhost:1/v1" };
+  config.retryJudge.enabled = true;
+  config.memoryGate.enabled = false;
+  config.toolGate.enabled = true;
+  config.toolGate.mode = "enforce";
+  config.retryJudge.maxSameFailureRetries = 1;
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return { ok: false, status: 503 }; };
+  try {
+    const handlers = new Map();
+    setupFailureClassifier({ on: (name, handler) => handlers.set(name, handler) });
+    setupToolGate({ on: (name, handler) => handlers.set(`gate:${name}`, handler) });
+    const classify = handlers.get("tool_result");
+    const gate = handlers.get("gate:tool_call");
+    const event = (toolName, path) => ({ toolName, input: { path }, isError: true,
+      content: [{ type: "text", text: "File not found" }], details: {} });
+
+    config.retryJudge.appendToResult = false;
+    assert.equal(await classify(event("read", "silent-missing.ts"), {}), undefined);
+    assert.equal(calls, 0, "default silent mode should not call a judgment backend");
+    assert.equal(getFailureCountByActionKey(getActionKey("read", { path: "silent-missing.ts" })), 1);
+    assert.equal((await gate({ toolName: "read", input: { path: "silent-missing.ts" } }, {})).block, true);
+
+    config.retryJudge.appendToResult = true;
+    const result = await classify(event("write", "annotated-missing.ts"), {});
+    assert.equal(calls, 1);
+    assert.match(result.content.at(-1).text, /skipped/);
+    assert.equal(getFailureCountByActionKey(getActionKey("write", { path: "annotated-missing.ts" })), 1);
+    assert.equal((await gate({ toolName: "write", input: { path: "annotated-missing.ts" } }, {})).block, true);
+
+    config.retryJudge.enabled = false;
+    assert.equal(await gate({ toolName: "write", input: { path: "annotated-missing.ts" } }, {}), undefined,
+      "turning off the retry judge must also turn off its circuit breaker");
+  } finally {
+    globalThis.fetch = originalFetch;
+    resetState();
+    resetClient();
+    resetConfigToDefaults();
+  }
 });
 
 test("ordinary writes are never confirmed; the approval cache still scopes to a task", async () => {

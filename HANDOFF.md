@@ -117,7 +117,7 @@ interface JudgmentBackend {
 2. **两层答案防线**：facade 先拒绝缺失、越界、类型错误或候选外答案并触发 fallback；`choiceOf(answer)` 再把模块侧异常形状收窄成 `{choice:"unknown", confidence:0}`，而不是崩。
 3. **向后兼容**：旧版顶层 `jev.model` / `jev.timeoutMs` 仍然有效，`config.ts` 的 `normalizeJudgmentConfig()` 会把它补进 `judgment.backends.typesafe`。老用户零迁移。
 4. **advisory 是默认门控模式**：`toolGate.mode: "advisory"` 时**从不弹确认框、从不拦截**，只发通知（且 `errors-only` 下通知也被抑制）。只有改成 `"enforce"` 才有 `ctx.ui.confirm()`。用户明确要求不打断工作流。
-5. **失败注记**：工具失败后 failure-classifier 会把 `[pi-jev-control 插件评估——并非工具输出]` 追加到工具结果里（原始结果不变、不阻塞）。由 `retryJudge.enabled` 总控；`retryJudge.appendToResult: false` 可只关掉追加文字、保留失败记忆和重试判断。
+5. **失败计数与注记**：`retryJudge.enabled` 总控失败计数和熔断；`appendToResult: false`（默认）只做本地计数，不自动请求 Jev、不改工具输出。设为 `true` 才调用 Jev 并附上标明插件来源的注记；后端不可用也必须计数。自动持久化失败记忆还需开启注记并设置 `memoryGate.mode: "auto"`，`suggest` 不写。
 6. **模型候选与思考等级（v0.9）**：`router.models.<tier>` 接受单个 `ModelSpec` 或按优先级排列的数组；`thinking` 在模型选中后调用 `pi.setThinkingLevel()`。同一模型命中不同 tier 时也必须重新应用 thinking，不能因为模型未变化就提前返回。候选回退仅覆盖模型未注册、缺少认证或 `setModel()` 抛错，不负责已开始请求后的 429/网络重试。
 
 ## 5. 环境坑（踩过的，别再踩）

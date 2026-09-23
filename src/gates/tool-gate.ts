@@ -53,10 +53,10 @@ export function setupToolGate(pi: ExtensionAPI): void {
 
     // Repeated-failure protection applies before every allow fast path.
     const maxRetries = config.retryJudge.maxSameFailureRetries;
-    const failureCount = Math.max(
+    const failureCount = config.retryJudge.enabled ? Math.max(
       getFailureCountByActionKey(actionKey),
       getFailureCountByInput(toolName, inputSummary),
-    );
+    ) : 0;
     if (failureCount >= maxRetries && maxRetries > 0) {
       const reason = blockReason(
           tr(

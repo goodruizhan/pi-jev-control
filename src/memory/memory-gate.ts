@@ -142,7 +142,7 @@ export function storeFailureMemory(
   recommendedAction: string,
 ): void {
   const config = loadConfig();
-  if (!config.enabled || !config.memoryGate.enabled) return;
+  if (!config.enabled || !config.memoryGate.enabled || config.memoryGate.mode !== "auto") return;
 
   // Only store important failures (not transient, not repeated)
   if (failureType === "transient" || failureType === "repeated") return;

@@ -61,7 +61,7 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 - Sends exit code, stderr, command category, abort state, and failure count to Jev
 - Repeated action/failure families short-circuit locally to `do_not_retry`
 - Retry circuit breaking starts after two same-family failures; remembered failures warn by default instead of blocking
-- Failure assessments are explicitly labeled as plugin output; set `retryJudge.appendToResult: false` to keep failure memory and retry judgment without touching tool output
+- With `retryJudge.appendToResult: false` (default), failed calls are counted locally without an automatic Jev request or changes to tool output. Opting into annotations calls Jev; failures are still counted when the backend is down. Automatic persistent failure memory additionally requires `memoryGate.mode: "auto"` and annotations enabled.
 - Failure Judge timeout is bounded and configurable (2500 ms by default since v0.8)
 - Context, skill, memory, and compaction gates are enabled by default
 - Compaction skips Jev locally when available tool output cannot meet the savings threshold
