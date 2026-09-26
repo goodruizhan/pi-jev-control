@@ -57,6 +57,7 @@ export async function routeModelDetailed(
   const config = loadConfig();
 
   if (!config.enabled || !config.router.enabled) return { success: false, tier, reason: "router disabled" };
+  if (config.router.mode === "off") return { success: false, tier, reason: "router mode is off" };
 
   if (config.router.mode === "tier-only") {
     return { success: true, tier, provider: ctx.model?.provider, model: ctx.model?.id, thinking: pi.getThinkingLevel?.() };

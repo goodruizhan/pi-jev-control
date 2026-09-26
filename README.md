@@ -9,6 +9,7 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 - Risk assessment checks bounded `operation` and `details` independently, including when the model is unavailable; deterministic findings remain advisory data, not new automatic actions.
 - Small-model choice answers must match a complete declared label (trim/case normalization retained). Empty, partial, ambiguous or unknown choices fail parsing and use the configured fallback instead of becoming the first option.
 - Backend evaluation now initializes its reference cache before replay, including records requiring a live reference answer.
+- The low-level model router also respects `router.mode: "off"`, including direct calls and queued decisions made before routing was disabled. Provider-neutral regressions cover ordered authentication/switch failures, upward fallback, and clamped or unsupported thinking levels.
 
 ## v1.0.1 Round-3 Probe Gap Closure
 
@@ -285,11 +286,12 @@ Create `~/.pi/agent/jev-control.json`:
 
 Project-level config override: `<project>/.pi/jev-control.json` (overrides global).
 
-`router.mode` is the only thing that makes routing happen: `rules-only` (default) and
-`off` compute a tier but never switch the model, `"tier-only"` computes a tier and never
-switches, `"set-model"` switches with Jev input and no Jev without, `"off"` disables the
-module. Only the model's own `jev_request_model_tier` call or a `/jev route <tier>`
-command can switch models while `router.mode` is `rules-only`.
+Routing requires both global and router enablement. `router.mode: "off"` disables
+routing, including explicit requests and low-level calls. `rules-only` (default)
+does not infer a tier automatically: an explicit model request or user tier override
+can switch models. `advisory` records inferred tiers without switching; explicit
+requests can still switch. `tier-only` never switches. `set-model` enables legacy
+automatic routing, with deterministic upward fallback when judgment is unavailable.
 
 `memoryGate.mode` is `suggest` (default) or `auto`. `suggest` only notifies and never
 writes to memory; `auto` lets the gate write records to disk. Either way,

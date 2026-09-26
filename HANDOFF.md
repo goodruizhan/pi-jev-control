@@ -120,7 +120,8 @@ interface JudgmentBackend {
 3. **向后兼容**：旧版顶层 `jev.model` / `jev.timeoutMs` 仍然有效，`config.ts` 的 `normalizeJudgmentConfig()` 会把它补进 `judgment.backends.typesafe`。老用户零迁移。
 4. **advisory 是默认门控模式**：`toolGate.mode: "advisory"` 时**从不弹确认框、从不拦截**，只发通知（且 `errors-only` 下通知也被抑制）。只有改成 `"enforce"` 才有 `ctx.ui.confirm()`。用户明确要求不打断工作流。
 5. **失败计数与注记**：失败事件始终本地计数；`retryJudge.enabled=false` 关闭自动注记、Jev 分类和重试熔断，但不抹掉失败历史；`appendToResult: false`（默认）只做本地计数，不自动请求 Jev、不改工具输出。设为 `true` 才调用 Jev 并附上标明插件来源的注记；后端不可用也必须计数。自动持久化失败记忆还需开启注记并设置 `memoryGate.mode: "auto"`，`suggest` 不写。
-6. **模型候选与思考等级（v0.9）**：`router.models.<tier>` 接受单个 `ModelSpec` 或按优先级排列的数组；`thinking` 在模型选中后调用 `pi.setThinkingLevel()`。同一模型命中不同 tier 时也必须重新应用 thinking，不能因为模型未变化就提前返回。候选回退仅覆盖模型未注册、缺少认证或 `setModel()` 抛错，不负责已开始请求后的 429/网络重试。
+6. **关闭模式底线**：`routeModelDetailed()` 自身也必须检查 `router.mode === "off"`，不能仅依赖上层入口，因为它可被直接调用，且排队期间模式可能改变。跨模型契约测试在 `test/model-router.test.mjs`，使用 provider 无关 mock；并不代替真实模型网络验证。
+7. **模型候选与思考等级（v0.9）**：`router.models.<tier>` 接受单个 `ModelSpec` 或按优先级排列的数组；`thinking` 在模型选中后调用 `pi.setThinkingLevel()`。同一模型命中不同 tier 时也必须重新应用 thinking，不能因为模型未变化就提前返回。候选回退仅覆盖模型未注册、缺少认证或 `setModel()` 抛错，不负责已开始请求后的 429/网络重试。
 
 ## 5. 环境坑（踩过的，别再踩）
 
