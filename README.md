@@ -4,6 +4,12 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## Unreleased — judgment boundary fixes
+
+- Risk assessment checks bounded `operation` and `details` independently, including when the model is unavailable; deterministic findings remain advisory data, not new automatic actions.
+- Small-model choice answers must match a complete declared label (trim/case normalization retained). Empty, partial, ambiguous or unknown choices fail parsing and use the configured fallback instead of becoming the first option.
+- Backend evaluation now initializes its reference cache before replay, including records requiring a live reference answer.
+
 ## v1.0.1 Round-3 Probe Gap Closure
 
 - **12 missing dangerous-command patterns** — Windows `del /s` (any flag order) and `rmdir /s` alias `rd /s`; `git push +refspec` and `git rebase -i`; `podman rmi`; `terraform destroy`; `pkill`, `killall`, `kill -9|-f|-KILL`; `curl`/`wget` piped to `bash|zsh|ksh|dash|fish|sh`; SQL clients (`psql`/`psqlcmd`/`mysql`/`sqlite3`/`sqlite`) with `DROP` as a quoted argument; `env` as a command runner.
@@ -68,7 +74,7 @@ The deterministic safety floor is enforced by a wrapper-aware shell pattern tabl
 
 - **Judgment backend abstraction** — every decision flows through a neutral IR (`choice`/`noul`/`score`); Jev is now the default *backend*, not the core
 - **Jev-compatible clones** — any endpoint speaking the System One wire format (`POST /v1/systemone`) plugs in with config only (`type: "typesafe-api"` + `baseUrl`/`apiKeyEnv`/`model`)
-- **Small local models** — the `openai-compatible` backend targets Ollama/vLLM/LM Studio for offline or private judgment (self-reported confidence, fuzzy answer normalization)
+- **Small local models** — the `openai-compatible` backend targets Ollama/vLLM/LM Studio for offline or private judgment (self-reported confidence, complete-label case normalization)
 - **Per-module routing** — `judgment.modules` assigns a backend per module (router, toolGate, ...); `judgment.fallback` adds a standby backend
 - **Honest confidence** — each backend declares its confidence kind (`calibrated` vs `self-reported`) so thresholds are interpreted correctly
 - **Per-backend stats** — `/jev stats` breaks usage down by backend
@@ -347,7 +353,7 @@ All modules ask a **judgment backend** for decisions. The default backend is `ty
 Backend types:
 
 - **`typesafe-api`** — Jev or any Jev-compatible clone exposing the System One wire format (`POST {baseUrl}/v1/systemone`). `baseUrl` is the API root without a `/v1` suffix (e.g. `https://api.typesafe.ai`). Returns calibrated probabilities (`confidenceKind: "calibrated"`).
-- **`openai-compatible`** — any OpenAI chat-completions endpoint, intended for **small, fast judgment models** (1–4B class, e.g. Ollama locally). Answers are parsed from strict JSON with fuzzy choice matching; confidence is `self-reported`, so treat thresholds more conservatively. Pointing this at a large general LLM defeats the purpose of a fast decision layer.
+- **`openai-compatible`** — any OpenAI chat-completions endpoint, intended for **small, fast judgment models** (1–4B class, e.g. Ollama locally). Answers are parsed from JSON with complete-label choice matching (case-insensitive when unambiguous); confidence is `self-reported`, so treat thresholds more conservatively. Pointing this at a large general LLM defeats the purpose of a fast decision layer.
 - **`embedding`** — any OpenAI-compatible embeddings endpoint (`POST {baseUrl}/embeddings`). Zero-shot judgment: the question+state becomes a query text, each option becomes a candidate text, cosine similarity + softmax picks the answer. Confidence is `similarity` — it only measures how much the winner beats the rest, so keep thresholds conservative. Static candidate texts (option labels) are cached in memory, so each judgment costs one batched HTTP call.
 - **`rules`** — bundled deterministic rules for known shell risks, repeated failures, forced code review, and memory type patterns. It is configured as the default last-resort fallback and uses no API key or tokens. If any question in a request has no matching rule, the backend returns `unavailable` and the calling module uses its existing safe fallback; it never presents a zero probability as a model judgment. Rules do not make Jev or another model appear available to model-only features.
 

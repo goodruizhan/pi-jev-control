@@ -4,6 +4,12 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## 未发布 — 判断边界修复
+
+- 风险自查分别检查有界 `operation` 与 `details`，模型不可用时仍给出确定性结论；保持建议性质，不增加自动操作。
+- 小模型 choice 必须匹配完整候选标签（保留去空白、大小写兼容）；空白、部分、歧义或未知选项解析失败并走配置的降级路径，不再误匹配首个选项。
+- 后端评测在重放前初始化参考缓存，修复需要在线参考答案的记录触发初始化异常。
+
 ## v1.0.1 第三轮探针缺口补齐
 
 - **新增 12 类危险命令模式** — Windows `del /s`（任意 flag 顺序）与 `rmdir /s` 别名 `rd /s`；`git push +refspec` 与 `git rebase -i`；`podman rmi`；`terraform destroy`；`pkill`、`killall`、`kill -9|-f|-KILL`；`curl`/`wget` 管道到 `bash|zsh|ksh|dash|fish|sh`；SQL 客户端（`psql`/`psqlcmd`/`mysql`/`sqlite3`/`sqlite`）以引号形式传入 `DROP`；`env` 作为命令包装器。
@@ -68,7 +74,7 @@
 
 - **判断后端抽象** — 所有决策都经过中立 IR（`choice`/`noul`/`score`），Jev 从「核心」变成「默认后端」
 - **Jev 兼容克隆** — 任何实现 System One 线协议（`POST /v1/systemone`）的端点，纯配置即可接入（`type: "typesafe-api"` + `baseUrl`/`apiKeyEnv`/`model`）
-- **本地小模型** — `openai-compatible` 后端面向 Ollama/vLLM/LM Studio 的小快模型，支持离线与私有判断（自报置信度 + 模糊匹配归一化）
+- **本地小模型** — `openai-compatible` 后端面向 Ollama/vLLM/LM Studio 的小快模型，支持离线与私有判断（自报置信度 + 完整标签大小写归一化）
 - **按模块路由** — `judgment.modules` 可为 router、toolGate 等模块分别指定后端；`judgment.fallback` 配置备用后端
 - **诚实的置信度** — 每个后端声明自己的置信度性质（`calibrated` 校准概率 vs `self-reported` 自报置信度），避免阈值被误读
 - **按后端统计** — `/jev stats` 分后端展示用量

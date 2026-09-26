@@ -66,6 +66,11 @@ eight separate calls. Cap it at ~8 questions.
    depend on any model being reachable, so trust it over the judgment part.
 2. A **judgment** part: a risk level and a gate verdict, `undefined` when Jev is down.
 
+Put a concise summary in `operation` and the actual command or specifics in `details`.
+Both fields are checked independently (up to 2,000 characters each), and the more
+conservative shell risk wins. A non-match is not proof of safety: these are bounded
+pattern checks, not a complete shell parser.
+
 A `high` risk rating means "check with the user first", not "abort". Your call.
 
 ## When the same failure happens twice: diagnose, do not retry

@@ -4,7 +4,7 @@ import { tr } from "../i18n.js";
 import { getJudgeUnavailableReason, judge, isJudgeAvailable } from "../judge/facade.js";
 import { choiceOf } from "../judge/ir.js";
 import { normalizeToolGateDecision } from "../judge/normalize.js";
-import { classifyShellCommand, isDangerousBashCommand } from "../judge/rules-backend.js";
+import { classifyShellCommand } from "../judge/rules-backend.js";
 import { OPERATION_RISK_QUESTION, TOOL_GATE_QUESTION } from "../judge/questions.js";
 import { extractRouteRisk } from "../router/risk.js";
 import { resolveJevGatePolicy } from "./tool-gate.js";
@@ -52,9 +52,14 @@ export async function assessRisk(
 
   // ── Deterministic part: computed always, included always ────────────
   const bounded = operation.slice(0, 2000);
-  const shellRisk = classifyShellCommand(bounded);
-  const dangerous = isDangerousBashCommand(bounded);
-  const route = extractRouteRisk(bounded);
+  const boundedDetails = (details ?? "").slice(0, 2000);
+  // Classify each field independently: a prose summary must not conceal the
+  // actual command in details, or turn two safe commands into shell composition.
+  const shellRisks = [classifyShellCommand(bounded)];
+  if (boundedDetails.trim()) shellRisks.push(classifyShellCommand(boundedDetails));
+  const dangerous = shellRisks.includes("dangerous");
+  const shellRisk = dangerous ? "dangerous" : shellRisks.includes("uncertain") ? "uncertain" : "safe";
+  const route = extractRouteRisk(`${bounded}\n${boundedDetails}`);
   const base: AssessRiskResult = {
     status: "ok",
     confidence: 0,
@@ -75,7 +80,7 @@ export async function assessRisk(
     {
       tool: (tool ?? "").slice(0, 120),
       operation: bounded,
-      details: (details ?? "").slice(0, 2000),
+      details: boundedDetails,
       risk_features: route.features,
       minimum_tier: route.minimumTier,
     },

@@ -246,11 +246,9 @@ function normalizeAnswer(question: JudgeQuestionIR, raw: Record<string, unknown>
     const confidence = clamp01(toNumber(raw.confidence)) ?? 0.5;
     const rawChoice = typeof raw.choice === "string" ? raw.choice : String(raw.choice ?? "");
     const matched = matchOption(rawChoice, Object.keys(question.criteria));
-    if (!matched) {
-      // Unmatched answer: pass through with heavily discounted confidence;
-      // callers normalize unknown values to their safe defaults.
-      return { type: "choice", choice: rawChoice, confidence: confidence * 0.3 };
-    }
+    // Reject abstentions and prose/ambiguous answers instead of manufacturing
+    // a valid option. The facade can then use its configured fallback.
+    if (!matched) return null;
     return {
       type: "choice",
       choice: matched.label,
@@ -266,17 +264,14 @@ function normalizeAnswer(question: JudgeQuestionIR, raw: Record<string, unknown>
   };
 }
 
-/** Fuzzy-match a model-produced choice against the declared option labels. */
+/** Accept complete labels only; tolerate case but never infer an option from prose. */
 function matchOption(raw: string, labels: string[]): { label: string; exact: boolean } | null {
   const trimmed = raw.trim();
+  if (!trimmed) return null;
   for (const label of labels) if (label === trimmed) return { label, exact: true };
   const lower = trimmed.toLowerCase();
-  for (const label of labels) if (label.toLowerCase() === lower) return { label, exact: false };
-  for (const label of labels) {
-    const l = label.toLowerCase();
-    if (l.includes(lower) || lower.includes(l)) return { label, exact: false };
-  }
-  return null;
+  const matches = labels.filter((label) => label.toLowerCase() === lower);
+  return matches.length === 1 ? { label: matches[0], exact: false } : null;
 }
 
 function toNumber(value: unknown): number | null {

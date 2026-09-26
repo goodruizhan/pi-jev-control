@@ -14,9 +14,9 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0（架构反转完成） |
-| 基线提交 | v1.0.0 提交以 `git log -1` 为准 |
-| 测试 | 运行 `npm test`，以当前输出为准（第二轮基线 136/136） |
+| 版本 | 1.0.1 + 本地未发布修复（以 package.json / git diff 为准） |
+| 基线提交 | v1.0.1 为 020faf6；当前状态以 `git log -1` 与 `git diff` 为准 |
+| 测试 | 运行 `npm test`，以当前输出为准；新增 details 风险、无效 choice 和 eval 在线参考分支回归 |
 | 真实 Jev 冒烟 | 通过（`npm run test:jev`，需 `TYPESAFE_API_KEY`） |
 | 依赖 | 运行依赖 `@typesafe-ai/sdk`、`typebox`；开发依赖 `typescript`（详见 `package.json`） |
 
@@ -65,7 +65,7 @@ src/judge/          ← 中立判断核心（v0.6 新增，替换旧 src/jev/）
   ir.ts             中立 IR：choice/noul/score + 构建器；答案字段名沿用 SDK 习惯
   backend.ts        JudgmentBackend 接口 + JudgeOutcome + ConfidenceKind
   typesafe-backend.ts  Jev 及 Jev 兼容克隆 ← 全项目唯一 import @typesafe-ai/sdk 的文件
-  openai-backend.ts     Ollama/小模型：JSON 输出 + 模糊选项匹配 + 概率钳制
+  openai-backend.ts     Ollama/小模型：JSON 输出 + 完整标签匹配（允许大小写差异）+ 概率钳制
   embedding-backend.ts  向量相似度（v0.7）：余弦相似度+softmax，候选向量内存缓存
   rules-backend.ts      确定性规则后端：复用各模块的本地规则；无匹配规则则整次请求返回 unavailable
   eval.ts               后端评测（v0.7）：JSONL 记录 + 两后端答案对比（agree/distance）
@@ -148,6 +148,8 @@ interface JudgmentBackend {
 已完成：P4 EmbeddingBackend（`embedding-backend.ts`，`type: "embedding"`，余弦相似度+softmax，候选向量内存缓存）；P5 后端评测（facade 记录钩子 `judgment.eval.recordPath` → JSONL，`npm run eval` 用 `test/eval-backends.mjs` 重放对比，`test/eval/cases.jsonl` 为带标注的种子数据集）；RulesBackend 收编（本地规则共享，默认备用后端；无法回答的问题返回 `unavailable`，模型专用功能仍按模型可用性判断）。
 
 ## 7. 开发流程
+
+未发布边界修复：`assessRisk` 对有界 operation/details 分别分类并取保守风险；openai-compatible 拒绝空白/部分/歧义 choice，不再从子串推测合法选项；eval 的 referenceCache 必须在重放循环之前初始化。相关回归在 `test/review-regressions.test.mjs` 和 `test/eval-cli.test.mjs`（后者只使用 rules 后端，不联网）。
 
 ```bash
 npm run typecheck     # tsc --noEmit

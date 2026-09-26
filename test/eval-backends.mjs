@@ -73,6 +73,8 @@ console.log(`candidates: ${candidateNames.join(", ") || "(none)"}\n`);
 
 const timeoutMs = Number(args.timeoutMs ?? 8000);
 const summaries = [];
+// Initialize before the first awaited comparison can resolve a live reference.
+const referenceCache = new Map();
 
 for (const { name, backend } of candidates) {
   const summary = {
@@ -122,8 +124,7 @@ for (const { name, backend } of candidates) {
 }
 
 // Resolve reference answers per case: explicit expect > recorded answers > live reference run.
-// Live reference results are memoized per case index to avoid double calls.
-const referenceCache = new Map();
+// Live reference results are memoized per case object to avoid double calls.
 async function resolveReference(evalCase, referenceBackend, timeout) {
   if (evalCase.expect) return expectToAnswers(evalCase.questions, evalCase.expect);
   if (evalCase.answers && Object.keys(evalCase.answers).length > 0) return evalCase.answers;
