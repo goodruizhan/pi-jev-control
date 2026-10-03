@@ -56,9 +56,21 @@ export function modeSwitchesModel(mode: RouteMode): boolean {
   return mode === "set-model";
 }
 
+function isSkippable(text: string, source: string): boolean {
+  return !text?.trim() || source === "extension" || text.trimStart().startsWith("/")
+    || SHORT_CONFIRMATIONS.has(text.trim().toLowerCase());
+}
+
+// A skipped input consumes the queued `/jev route` override: after
+// `/jev route strong`, a bare "yes" must not carry the override over to the
+// next substantive input. Both skip call sites funnel through here, and a
+// substantive input never touches the queued override.
 function shouldSkipRouting(text: string, source: string): boolean {
-  if (!text?.trim() || source === "extension" || text.trimStart().startsWith("/")) return true;
-  return SHORT_CONFIRMATIONS.has(text.trim().toLowerCase());
+  if (isSkippable(text, source)) {
+    nextOverride = undefined;
+    return true;
+  }
+  return false;
 }
 
 function previousContext(ctx?: ExtensionContext): Record<string, unknown> {
@@ -177,13 +189,8 @@ export async function routeTask(
   signal?: AbortSignal,
   ctx?: ExtensionContext,
 ): Promise<RouterResult | null> {
-  // A skipped input (short confirmation, slash command, …) consumes the queued
-  // override: after `/jev route strong`, a bare "yes" must not carry the
-  // override over to the next substantive input.
-  if (shouldSkipRouting(text, source)) {
-    nextOverride = undefined;
-    return null;
-  }
+  // shouldSkipRouting consumes the queued override on every skipped input.
+  if (shouldSkipRouting(text, source)) return null;
   const config = loadConfig();
   if (!config.enabled || !config.router.enabled) {
     nextOverride = undefined;

@@ -49,30 +49,45 @@ export function classifyShellCommand(command: string): ShellRisk {
 }
 
 /**
- * Check if a bash command matches known safe patterns.
- * Uses explicit prefix matching, not includes().
+ * Check if a bash command matches known safe patterns: no dangerous pattern,
+ * no substitution/redirection, and every shell segment individually on the
+ * safe list.
  */
 export function isSafeBashCommand(command: string): boolean {
   const trimmed = command.trim();
+  if (!trimmed) return false;
+  // A quoted-delimiter cat heredoc with a complete terminator is data; judge
+  // the surrounding command with the body and terminator blanked, exactly
+  // like the dangerous scan does. Unquoted heredocs and pipes into shells
+  // stay visible, so they cannot reach the safe list through this masking.
+  const masked = maskInertCatHeredocs(trimmed);
+  // Heredoc markers are the one `<<` a safe command may carry; any other
+  // redirection, command substitution, or backtick acts even inside
+  // read-like command names.
+  const withoutHeredocMarkers = masked.replace(/<<-?['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/g, "");
+  if (/[<>`]|\$\(/.test(withoutHeredocMarkers)) return false;
+  // Split exactly like the dangerous scan splits, then require every segment
+  // to be known-safe on its own: a multi-line run of harmless commands is
+  // safe, while any chain containing an unknown command stays uncertain.
+  return splitSegments(masked).every(isSafeSegment);
+}
 
-  // Reject chaining, redirection, command substitution, and multi-line commands.
-  if (/[;&|<>`\r\n]/.test(trimmed) || trimmed.includes("$(")) return false;
-
+function isSafeSegment(segment: string): boolean {
+  // A leftover `;`/`&`/`|` means the segment was not fully split (for example
+  // a single background `&`); the safe list must never span a separator.
+  if (/[;&|]/.test(segment)) return false;
   // Shell find can execute or delete; the built-in Pi find tool remains safe.
-  if (/^find(?:\s|$)/i.test(trimmed)) return false;
-
+  if (/^find(?:\s|$)/i.test(segment)) return false;
   // These options can execute a helper or write output despite a read-like command name.
-  if (/^rg(?:\s|$)/i.test(trimmed) && /(?:^|\s)--pre(?:=|\s)/i.test(trimmed)) return false;
-  if (/^git\s+(?:diff|log)(?:\s|$)/i.test(trimmed) && /(?:^|\s)(?:--output(?:=|\s)|--ext-diff\b|--textconv\b)/i.test(trimmed)) return false;
-
+  if (/^rg(?:\s|$)/i.test(segment) && /(?:^|\s)--pre(?:=|\s)/i.test(segment)) return false;
+  if (/^git\s+(?:diff|log)(?:\s|$)/i.test(segment) && /(?:^|\s)(?:--output(?:=|\s)|--ext-diff\b|--textconv\b)/i.test(segment)) return false;
+  const lower = segment.toLowerCase();
   for (const safe of SAFE_BASH_COMMANDS) {
-    const lower = trimmed.toLowerCase();
     const safeLower = safe.toLowerCase();
     if (lower === safeLower) return true;
     if (lower.startsWith(safeLower + " ")) return true;
     if (lower.startsWith(safeLower + "\t")) return true;
   }
-
   return false;
 }
 
@@ -281,7 +296,9 @@ function maskInertCatHeredocs(command: string): string {
     const body = lines.slice(i + 1, end).join("\n");
     // Even an unquoted heredoc can perform shell substitutions.
     if (!match[2] && (/\$\(|`/.test(body))) { i = end; continue; }
-    for (let j = i + 1; j < end; j++) lines[j] = " ";
+    // Blank the body and the terminator line: both are data, and the bare
+    // marker must not look like an unknown segment to the safe-list scan.
+    for (let j = i + 1; j <= end; j++) lines[j] = " ";
     i = end;
   }
   return lines.join("\n");

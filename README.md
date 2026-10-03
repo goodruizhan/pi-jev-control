@@ -14,6 +14,19 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 
 Fixes and behaviors from the 2026-10-04 cross-component test report:
 
+### Round-2 follow-up
+
+- `assessRisk` runs its deterministic shell scan and risk-feature extraction over the **whole** operation (bounded at 200k chars defensively); only the model request stays capped at 2000 chars. A destructive command past the model-facing window now yields `deterministic.dangerous: true` and forces `risk: "high"`, per the module contract that a deterministic match outranks any Jev verdict (round-2 N-1 / round-1 S-3).
+- `rm` with `--force=<value>` / `--recursive=<value>` spellings is dangerous (round-2 N-2).
+- `--no-preserve-root` counts as a destructive switch by itself: `rm --no-preserve-root -rf /` and bare `rm --no-preserve-root /` are dangerous (round-2 N-4).
+- `rm --help` / `rm --version` classify as safe instead of noisy uncertain (round-2 N-3).
+- A complete quoted-delimiter `cat` heredoc with an inert body classifies as safe: the heredoc body and terminator are masked as data before the safe-list scan, so `cat <<'EOF' … EOF` stops producing meaningless uncertain warnings (round-2 N-5). Substitutions, pipes into shells, and dangerous segments keep their verdicts.
+- `isSafeBashCommand` is segment-aware: a multi-line run of known-safe commands (echo/ls/cat with no redirection) is safe, while any chain containing an unknown command stays uncertain.
+- The queued `/jev route` override is consumed inside `shouldSkipRouting`, so both skip call sites share one choke point and a skipped input can never carry the override forward (round-2 S-12 shape).
+- `npm run eval` now compares against **every configured backend by default** (binary `rules` included; abstentions are reported separately), so a single-candidate run can no longer report trivial 100% agreement (round-2 N-6 / round-1 P-9).
+
+### Round-1 batch
+
 - Shell safety: `rm` with long flags (`--force`, `--recursive`) is dangerous regardless of flag order — `rm --force -r /tmp/x` no longer slips through when the short flag is not first; long-flag-only forms are flagged too, consistent with `rm -f`.
 - Shell safety: `cat <<'EOF' … EOF | bash` (heredoc piped into a shell interpreter, pipe on the terminator line or its own line) keeps its body visible to the dangerous-pattern scan instead of being masked as inert data.
 - Skill-gate exclusions work when a CJK negation is written without a space before a Latin term (`不使用python`), because the exclusion probe now runs against the raw query instead of query tokens; tokenization also re-splits mixed CJK+Latin runs for the lexical scoring floor.

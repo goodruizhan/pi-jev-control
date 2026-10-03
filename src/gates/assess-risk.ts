@@ -26,6 +26,9 @@ import { resolveJevGatePolicy } from "./tool-gate.js";
 export type RiskLevel = "low" | "moderate" | "high";
 export type GateVerdict = "allow" | "confirm" | "deny";
 
+/** Bound on the deterministic regex scan; only the model request is capped at 2000 chars. */
+const DETERMINISTIC_SCAN_LIMIT = 200_000;
+
 export interface AssessRiskResult {
   status: "ok" | "unavailable" | "disabled";
   risk?: RiskLevel;
@@ -56,15 +59,20 @@ export async function assessRisk(
   const detailText = typeof details === "string" ? details : "";
 
   // ── Deterministic part: computed always, included always ────────────
+  // The deterministic scan must see the whole operation: a destructive
+  // command past the model-facing 2000-char window (a long transcript with a
+  // dangerous tail) still has to fire the shell classifier and risk features.
   const bounded = text.slice(0, 2000);
   const boundedDetails = detailText.slice(0, 2000);
+  const scanOperation = text.slice(0, DETERMINISTIC_SCAN_LIMIT);
+  const scanDetails = detailText.slice(0, DETERMINISTIC_SCAN_LIMIT);
   // Classify each field independently: a prose summary must not conceal the
   // actual command in details, or turn two safe commands into shell composition.
-  const shellRisks = [classifyShellCommand(bounded)];
-  if (boundedDetails.trim()) shellRisks.push(classifyShellCommand(boundedDetails));
+  const shellRisks = [classifyShellCommand(scanOperation)];
+  if (scanDetails.trim()) shellRisks.push(classifyShellCommand(scanDetails));
   const dangerous = shellRisks.includes("dangerous");
   const shellRisk = dangerous ? "dangerous" : shellRisks.includes("uncertain") ? "uncertain" : "safe";
-  const route = extractRouteRisk(`${bounded}\n${boundedDetails}`);
+  const route = extractRouteRisk(`${scanOperation}\n${scanDetails}`);
   const base: AssessRiskResult = {
     status: "ok",
     confidence: 0,
@@ -111,7 +119,10 @@ export async function assessRisk(
   return {
     ...base,
     status: "ok",
-    risk,
+    // The module contract: a deterministic dangerous match outranks any Jev
+    // verdict — the model only ever sees the 2000-char window, so its rating
+    // cannot be trusted over a full-text pattern hit.
+    risk: dangerous ? "high" : risk,
     gateVerdict: verdict,
     policy,
     confidence: gateAnswer.confidence,

@@ -16,10 +16,10 @@
  *   node test/eval-backends.mjs [--dataset path] [--backends a,b] [--reference name] [--timeoutMs N]
  *
  * Defaults: dataset=test/eval/cases.jsonl, backends=<reference plus every
- * configured non-binary model backend>, reference=<configured judgment.backend>.
+ * configured backend (binary ones included)>, reference=<configured judgment.backend>.
  * Binary partial backends (for example `rules`) report intentionally
  * unsupported questions separately instead of treating abstention as a model
- * failure.
+ * failure, so a single-candidate run can never pass trivially.
  */
 
 import * as fs from "node:fs";
@@ -58,11 +58,10 @@ if (!reference) {
 const candidateNames = args.backends
   ? args.backends.split(",").map((name) => name.trim()).filter(Boolean)
   : [
+      // Every configured backend, binary ones included: a single-candidate
+      // run reports trivial 100% agreement, which is not a comparison.
       referenceName,
-      ...Object.keys(config.judgment.backends).filter((name) => {
-        if (name === referenceName) return false;
-        return getBackendByName(name)?.confidenceKind !== "binary";
-      }),
+      ...Object.keys(config.judgment.backends).filter((name) => name !== referenceName),
     ];
 
 const candidates = candidateNames.map((name) => ({ name, backend: getBackendByName(name) }));

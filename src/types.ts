@@ -389,6 +389,10 @@ export const SAFE_READONLY_TOOLS: Set<string> = new Set([
 
 export const SAFE_BASH_COMMANDS: string[] = [
   "pwd",
+  "cat",
+  // informational forms only — never a destructive rm invocation
+  "rm --help",
+  "rm --version",
   "git status",
   "git diff",
   "git log",
@@ -499,9 +503,10 @@ export interface SavingsStats {
  */
 export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
   // Flag alternation is order-independent: each repetition accepts a short
-  // (-rf, -r, -f) or long (--force, --recursive) destructive flag, so
-  // `rm --force -r /tmp/x` matches even though the short flag is not first.
-  /(?:^|[;&|]\s*)rm\s+(?:(?:-[a-zA-Z]*[rf][a-zA-Z]*|--force|--recursive)\s+)+/i,
+  // (-rf, -r, -f) flag or a destructive long option, including the
+  // `--option=value` spelling. `--no-preserve-root` exists only to unlock
+  // `rm -rf /`, so it counts as a destructive switch by itself.
+  /(?:^|[;&|]\s*)rm\s+(?:(?:-[a-zA-Z]*[rf][a-zA-Z]*|--(?:force|recursive|no-preserve-root)(?:=\S+)?)\s+)+/i,
   // ── git: working-tree loss and history rewriting ──────────────────
   /(?:^|[;&|]\s*)git\s+reset\s+--hard\b/i,
   // `git clean -fd` is dangerous when it targets the whole working tree;

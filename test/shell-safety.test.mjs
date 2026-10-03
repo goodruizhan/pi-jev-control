@@ -522,9 +522,11 @@ test("heredoc piped into a shell interpreter keeps its body visible", () => {
   for (const command of piped) {
     assert.equal(classifyShellCommand(command), "dangerous", `should be dangerous: ${JSON.stringify(command)}`);
   }
-  // Inert bodies and heredocs followed by a separate dangerous command keep
-  // their previous classification.
-  assert.equal(classifyShellCommand("cat <<'EOF'\nhello\nEOF\n"), "uncertain");
+  // An inert quoted heredoc body is data: the whole statement is safe
+  // (round-2 N-5). An unquoted body with substitutions and a heredoc
+  // followed by a separate dangerous command stay visible to the scan.
+  assert.equal(classifyShellCommand("cat <<'EOF'\nhello\nEOF\n"), "safe");
+  assert.equal(classifyShellCommand("cat <<EOF\n$(rm -rf /)\nEOF\n"), "dangerous");
   assert.equal(classifyShellCommand("cat <<'EOF'\nhello\nEOF\nrm -rf /\n"), "dangerous");
 });
 
