@@ -1,4 +1,4 @@
-import type { ContextEvent, ExtensionAPI, ExtensionContext, SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
+import type { ContextEventResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { PiMessage, PruningPlan } from "../types.js";
 import { loadConfig } from "../config.js";
 import { buildToolGroups, buildPruningPlan, applyPruning } from "./pruner.js";
@@ -53,7 +53,7 @@ export function setupContextHook(pi: ExtensionAPI): void {
     advanceTurn();
   });
 
-  (pi as any).on("context", async (event: ContextEvent, ctx: ExtensionContext) => {
+  pi.on("context", async (event, ctx) => {
     const config = loadConfig();
 
     // If compaction is disabled, pass through
@@ -100,7 +100,7 @@ export function setupContextHook(pi: ExtensionAPI): void {
   });
 }
 
-function applyPlanIfUseful(messages: PiMessage[], plan: PruningPlan): { messages: PiMessage[] } | undefined {
+function applyPlanIfUseful(messages: PiMessage[], plan: PruningPlan): ContextEventResult | undefined {
   const groups = buildToolGroups(messages).groups;
   const filtered = applyPruning(messages, plan, groups);
   const before = messages.reduce((sum, message) => sum + JSON.stringify(message).length, 0);
@@ -117,7 +117,9 @@ function applyPlanIfUseful(messages: PiMessage[], plan: PruningPlan): { messages
   recordCharsPruned(pruned);
   recordCharsTruncated(truncated);
   recordTokensSaved(saved);
-  return { messages: filtered };
+  // The pruner only filters or shallowly derives the very message objects Pi
+  // passed in; the permissive PiMessage view is internal to the pruner.
+  return { messages: filtered as unknown as ContextEventResult["messages"] };
 }
 
 /**
@@ -131,7 +133,7 @@ async function generateAndApplyPlan(
   messages: PiMessage[],
   signal: AbortSignal | undefined,
   existingPlan?: PruningPlan | null,
-): Promise<{ messages: PiMessage[] } | undefined> {
+): Promise<ContextEventResult | undefined> {
   const config = loadConfig();
 
   // Avoid a network round trip when the entire tool-result budget is too small
@@ -186,7 +188,7 @@ function maybeSuggestPruning(ctx: ExtensionContext, messages: PiMessage[]): void
  * Does NOT block Pi's native compaction.
  */
 export function setupSessionBeforeCompact(pi: ExtensionAPI): void {
-  (pi as any).on("session_before_compact", async (_event: SessionBeforeCompactEvent, _ctx: ExtensionContext) => {
+  pi.on("session_before_compact", async () => {
     const config = loadConfig();
     if (!config.enabled || !config.memoryGate.enabled) return;
 

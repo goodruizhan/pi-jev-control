@@ -4,6 +4,12 @@
 
 为 Pi Coding Agent 提供由 Jev 驱动的控制层。它使用 TypeSafe System One（Jev）作为低成本决策控制平面，涵盖任务路由、工具门控、失败分类、重试判断、上下文过滤、技能选择、记忆管理、上下文裁剪、压缩周期、审查门控和 GUI 操作路由。
 
+## v1.1.0 — Pi 1.0 支持
+
+- 面向 Pi Coding Agent **1.0**（`@earendil-works/pi-coding-agent` ^1.0.0）：peer 依赖固定到 1.0 线，并已按其类型定义重新校验全部扩展 API 用法。
+- `context` 与 `session_before_compact` 事件处理器改用 1.0 的正式类型签名，移除旧的 `(pi as any)` 兼容强转；`context` 处理器现在返回 1.0 规定的 `ContextEventResult`。
+- 152/152 测试通过，0 typecheck 错误。
+
 ## 未发布 — 判断边界修复
 
 - 风险自查分别检查有界 `operation` 与 `details`，模型不可用时仍给出确定性结论；保持建议性质，不增加自动操作。
@@ -375,6 +381,7 @@ pi install git:github.com/goodruizhan/pi-jev-control
 npm install --include=dev
 npm run typecheck
 npm test
+npm run test:host # 在真实 Pi SDK 宿主中加载扩展，不调用模型
 npm run test:jev # 需要 TYPESAFE_API_KEY
 pi -e ./extensions/index.ts
 ```

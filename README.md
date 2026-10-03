@@ -4,6 +4,12 @@
 
 Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as a low-cost decision control plane — routing, tool gating, failure classification, retry judgment, context filtering, skill selection, memory management, context pruning, compaction epoch, review gate, and GUI action routing.
 
+## v1.1.0 — Pi 1.0 support
+
+- Targets Pi Coding Agent **1.0** (`@earendil-works/pi-coding-agent` ^1.0.0): the peer dependency is pinned to the 1.0 line and every extension-API usage was re-verified against its type definitions.
+- The `context` and `session_before_compact` handlers now use the official 1.0 typed signatures instead of the old `(pi as any)` compatibility casts; the `context` handler returns the 1.0 `ContextEventResult`.
+- 152/152 tests pass, 0 typecheck errors.
+
 ## Unreleased — judgment boundary fixes
 
 - Risk assessment checks bounded `operation` and `details` independently, including when the model is unavailable; deterministic findings remain advisory data, not new automatic actions.
@@ -458,6 +464,7 @@ Additional tools:
 npm install --include=dev
 npm run typecheck
 npm test
+npm run test:host # loads the extension in the real Pi SDK host, zero model calls
 npm run test:jev # requires TYPESAFE_API_KEY
 pi -e ./extensions/index.ts
 ```
