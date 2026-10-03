@@ -177,11 +177,26 @@ export async function routeTask(
   signal?: AbortSignal,
   ctx?: ExtensionContext,
 ): Promise<RouterResult | null> {
-  if (shouldSkipRouting(text, source)) return null;
+  // A skipped input (short confirmation, slash command, …) consumes the queued
+  // override: after `/jev route strong`, a bare "yes" must not carry the
+  // override over to the next substantive input.
+  if (shouldSkipRouting(text, source)) {
+    nextOverride = undefined;
+    return null;
+  }
   const config = loadConfig();
-  if (!config.enabled || !config.router.enabled) return null;
-  if (config.router.mode === "off") return null;
-  if (config.router.mode === "set-model" && !hasConfiguredRouterTarget(config.router.models)) return null;
+  if (!config.enabled || !config.router.enabled) {
+    nextOverride = undefined;
+    return null;
+  }
+  if (config.router.mode === "off") {
+    nextOverride = undefined;
+    return null;
+  }
+  if (config.router.mode === "set-model" && !hasConfiguredRouterTarget(config.router.models)) {
+    nextOverride = undefined;
+    return null;
+  }
 
   const risk = extractRouteRisk(text);
   const inlineOverride = readInlineOverride(text);
@@ -256,7 +271,9 @@ export async function requestModelTier(
     return { success: false, tier: requested, reason: "router mode is off", ...base };
   }
 
-  const selected = await routeModelDetailed(pi, ctx, requested);
+  // Share the input/tool_result switch queue: a model-initiated tier request
+  // arriving while an input-triggered switch is in flight must not race it.
+  const selected = await enqueueSwitch(() => routeModelDetailed(pi, ctx, requested));
   const audit = {
     requestId: ++modelRequestSequence,
     timestamp: Date.now(),
@@ -289,9 +306,22 @@ export async function requestModelTier(
   return { ...selected, ...base };
 }
 
+/**
+ * Serialization for every `pi.setModel` path: input routing, tool-result
+ * escalation and model-initiated `jev_request_model_tier` all funnel through
+ * this queue, so two async paths can never race a setModel (last-write-wins
+ * in the SDK would make the final model unpredictable).
+ */
+let switchQueue: Promise<void> = Promise.resolve();
+
+function enqueueSwitch<T>(apply: () => Promise<T>): Promise<T> {
+  const pending = switchQueue.then(apply, apply);
+  switchQueue = pending.then(() => undefined, () => undefined);
+  return pending;
+}
+
 export function setupTaskRouter(pi: ExtensionAPI): void {
   let requestId = 0;
-  let switchQueue = Promise.resolve();
   let toolFailures = 0;
   const changedPaths = new Set<string>();
   pi.on("input", async (event, ctx) => {
@@ -381,8 +411,7 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
         ), backendFailed ? "error" : "warning");
       }
     };
-    const pending = switchQueue.then(apply, apply);
-    switchQueue = pending.then(() => undefined, () => undefined);
+    const pending = enqueueSwitch(apply);
     await pending;
   });
 
@@ -450,8 +479,7 @@ export function setupTaskRouter(pi: ExtensionAPI): void {
         ), "error");
       }
     };
-    const pending = switchQueue.then(apply, apply);
-    switchQueue = pending.then(() => undefined, () => undefined);
+    const pending = enqueueSwitch(apply);
     await pending;
   });
 }

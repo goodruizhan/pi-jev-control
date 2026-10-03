@@ -10,6 +10,20 @@ Jev-powered control layer for Pi Coding Agent. Uses TypeSafe System One (Jev) as
 - The `context` and `session_before_compact` handlers now use the official 1.0 typed signatures instead of the old `(pi as any)` compatibility casts; the `context` handler returns the 1.0 `ContextEventResult`.
 - 152/152 tests pass, 0 typecheck errors.
 
+## Unreleased — 2026-10-04 test-report batch
+
+Fixes and behaviors from the 2026-10-04 cross-component test report:
+
+- Shell safety: `rm` with long flags (`--force`, `--recursive`) is dangerous regardless of flag order — `rm --force -r /tmp/x` no longer slips through when the short flag is not first; long-flag-only forms are flagged too, consistent with `rm -f`.
+- Shell safety: `cat <<'EOF' … EOF | bash` (heredoc piped into a shell interpreter, pipe on the terminator line or its own line) keeps its body visible to the dangerous-pattern scan instead of being masked as inert data.
+- Skill-gate exclusions work when a CJK negation is written without a space before a Latin term (`不使用python`), because the exclusion probe now runs against the raw query instead of query tokens; tokenization also re-splits mixed CJK+Latin runs for the lexical scoring floor.
+- Judgment-layer entry points no longer crash on hostile input: `assessRisk(null)`, non-string `tool`/`details`, `rankCandidates(<non-array>)` and `extractCommand(null)` degrade to deterministic/skipped answers (previously uncaught TypeErrors).
+- The tool gate classifies any tool whose input carries a `command`/`cmd`/`shell`/`script` field (or is a common shell alias such as `run_command`, `shell_exec`) as a shell tool, so custom MCP shell wrappers are no longer bypassed.
+- `requestModelTier` shares the task router's switch queue with input/tool-result routing, so a model-initiated tier request can no longer race a pending `pi.setModel`.
+- A skipped input (short confirmation, slash command) consumes the `/jev route` override instead of silently carrying it to the next substantive input.
+- When `setThinkingLevel` fails after a successful model switch, the route result reports `thinkingFailed: true` and the reason says so, instead of an unqualified `success: true`.
+- Broken config JSON is surfaced in `/jev status` (with a per-file reason), not only as a console warning; `jev_decide_batch` results carry the `backend` field like the other jev tools.
+
 ## Unreleased — judgment boundary fixes
 
 - Risk assessment checks bounded `operation` and `details` independently, including when the model is unavailable; deterministic findings remain advisory data, not new automatic actions.

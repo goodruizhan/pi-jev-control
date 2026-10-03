@@ -103,8 +103,11 @@ export function setupToolGate(pi: ExtensionAPI): void {
     }
 
     // ── 2. Shell tool handling ─────────────────────────────────────
-    if (SHELL_TOOLS.has(toolName)) {
-      const command = extractCommand(toolInput);
+    // Custom shell tools (run_command, shell_exec, …) are not in SHELL_TOOLS,
+    // so a command-shaped input goes through classification regardless of the
+    // tool name; tools without a command field are unaffected.
+    const command = extractCommand(toolInput);
+    if (SHELL_TOOLS.has(toolName) || command) {
       const risk = classifyShellCommand(command);
 
       if (risk === "safe" && config.toolGate.useDeterministicFastPath) return;
@@ -144,7 +147,11 @@ export { classifyShellCommand, isDangerousBashCommand, isSafeBashCommand } from 
 import { classifyShellCommand } from "../judge/rules-backend.js";
 
 /** Tool names whose `input` carries an executable command line. */
-const SHELL_TOOLS: Set<string> = new Set(["bash", "sh", "shell", "powershell", "pwsh", "cmd"]);
+const SHELL_TOOLS: Set<string> = new Set([
+  "bash", "sh", "shell", "powershell", "pwsh", "cmd",
+  // Common aliases used by MCP servers and custom extensions.
+  "run_command", "run_cmd", "shell_exec", "shellexec", "execute", "execute_command", "terminal",
+]);
 
 /**
  * Pull a command string out of a tool input. Different shells and MCP wrappers
@@ -153,6 +160,7 @@ const SHELL_TOOLS: Set<string> = new Set(["bash", "sh", "shell", "powershell", "
  * to an empty string, which the safe check rejects and the gate then let pass.
  */
 export function extractCommand(input: Record<string, unknown>): string {
+  if (!input || typeof input !== "object") return "";
   for (const key of ["command", "cmd", "shell", "script"]) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) return value;

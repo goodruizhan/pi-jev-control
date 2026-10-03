@@ -50,9 +50,14 @@ export async function assessRisk(
 ): Promise<AssessRiskResult> {
   const config = loadConfig();
 
+  // The tool wrapper coerces its params, but assessRisk is also a public
+  // function — a null/undefined call must degrade to "unknown", not crash.
+  const text = typeof operation === "string" ? operation : "";
+  const detailText = typeof details === "string" ? details : "";
+
   // ── Deterministic part: computed always, included always ────────────
-  const bounded = operation.slice(0, 2000);
-  const boundedDetails = (details ?? "").slice(0, 2000);
+  const bounded = text.slice(0, 2000);
+  const boundedDetails = detailText.slice(0, 2000);
   // Classify each field independently: a prose summary must not conceal the
   // actual command in details, or turn two safe commands into shell composition.
   const shellRisks = [classifyShellCommand(bounded)];
@@ -78,7 +83,7 @@ export async function assessRisk(
 
   const result = await judge(
     {
-      tool: (tool ?? "").slice(0, 120),
+      tool: (typeof tool === "string" ? tool : "").slice(0, 120),
       operation: bounded,
       details: boundedDetails,
       risk_features: route.features,

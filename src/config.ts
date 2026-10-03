@@ -117,9 +117,17 @@ const DEFAULT_CONFIG: JevControlConfig = {
 
 let cachedConfig: JevControlConfig | null = null;
 let cachedConfigStamp = "";
+// Warnings from the most recent (re)load, surfaced through /jev status so a
+// broken config file is visible in the UI and not only on the console.
+let configWarnings: string[] = [];
 // When set, loadConfig() returns cachedConfig verbatim and never re-reads the
 // config files. Used by tests, which want to exercise the defaults themselves.
 let ignoreConfigFiles = false;
+
+/** Problems encountered while reading the config files of the last load. */
+export function getConfigWarnings(): string[] {
+  return configWarnings;
+}
 
 function configStamp(paths: string[]): string {
   return paths.map((file) => {
@@ -139,7 +147,9 @@ function readConfigFile(file: string): Record<string, unknown> {
     return parsed as Record<string, unknown>;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.warn(`[pi-jev-control] Invalid config ${file}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = `Invalid config ${file}: ${error instanceof Error ? error.message : String(error)} — every key fell back to its default`;
+      console.warn(`[pi-jev-control] ${message}`);
+      configWarnings.push(message);
     }
     return {};
   }
@@ -156,6 +166,7 @@ export function loadConfig(): JevControlConfig {
   const stamp = configStamp([CONFIG_PATH, projectConfigPath]);
   if (cachedConfig && (ignoreConfigFiles || stamp === cachedConfigStamp)) return cachedConfig;
 
+  configWarnings = [];
   const merged = deepMerge(readConfigFile(CONFIG_PATH), readConfigFile(projectConfigPath));
 
   cachedConfig = normalizeJudgmentConfig(

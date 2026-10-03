@@ -199,7 +199,12 @@ test("explicit overrides bypass Jev, while unavailable Jev uses a safe tier", as
     assert.equal(forced.tier, "cheap");
     assert.equal(forced.source, "override");
     setNextRouteOverride("strong");
+    // A skipped input consumes the queued override instead of silently
+    // carrying it over to the next substantive input.
     assert.equal(await routeTask("继续", "interactive"), null);
+    const afterConfirm = await routeTask("update docs", "interactive");
+    assert.equal(afterConfirm.source, "fallback");
+    setNextRouteOverride("strong");
     const next = await routeTask("update docs", "interactive");
     assert.equal(next.tier, "strong");
     assert.equal(next.source, "override");

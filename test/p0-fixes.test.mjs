@@ -54,3 +54,26 @@ test("decision copilot default timeout leaves room for an 8-question batch", () 
     `decisionCopilot.timeoutMs should be >= 2000ms for batched questions, got ${config.decisionCopilot.timeoutMs}`,
   );
 });
+
+// ── 2026-10-04 test report: judgment-layer entry points must not crash ──
+
+test("assessRisk degrades to deterministic-only on non-string input", async () => {
+  const { assessRisk } = await import("../dist/src/gates/assess-risk.js");
+  const { resetJudgeBackends } = await import("../dist/src/judge/registry.js");
+  resetJudgeBackends();
+  for (const bad of [null, undefined, 42, { operation: "x" }]) {
+    const result = await assessRisk(bad, "bash", null);
+    assert.equal(result.status, "ok", `assessRisk(${String(bad)}) must not throw`);
+    assert.equal(result.deterministic.dangerous, false);
+  }
+  assert.equal((await assessRisk("rm -rf /", "bash")).deterministic.dangerous, true);
+});
+
+test("rankCandidates treats non-array candidates as empty, not a crash", async () => {
+  const { rankCandidates } = await import("../dist/src/judge/rank.js");
+  const { resetJudgeBackends } = await import("../dist/src/judge/registry.js");
+  resetJudgeBackends();
+  const result = await rankCandidates("hello", "not an array", { limit: 5, threshold: 0.45 }, undefined, "rank");
+  assert.equal(result.status, "skipped");
+  assert.deepEqual(result.shortlist, []);
+});

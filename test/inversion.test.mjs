@@ -511,6 +511,23 @@ test("skill exclusion: a plain mention still matches", () => {
   );
 });
 
+test("skill exclusion: CJK negation directly attached to a Latin term", () => {
+  // Without whitespace boundaries the tokenizer merges "不使用python" into one
+  // token and the exclusion never fires. The probe must run against the raw
+  // query, not against query tokens (J-B2).
+  const name = "python-helper";
+  const desc = "Python scripting helper";
+  for (const query of ["不使用python", "不要使用python", "不需要python", "不涉及python", "no python"]) {
+    assert.equal(
+      isSkillRelevant(query, name, desc, 0.95, 0.4),
+      false,
+      `should exclude: ${query}`,
+    );
+  }
+  // A plain CJK+Latin mention without a negation still matches.
+  assert.equal(isSkillRelevant("使用python脚本", name, desc, 0.95, 0.4), true);
+});
+
 test("skill exclusion: a lookalike phrase does not exclude", () => {
   // "蓝色" (blue, as a colour) shares a prefix with "蓝图" (blueprint) but is a
   // different word, so the exclusion must not fire on it.

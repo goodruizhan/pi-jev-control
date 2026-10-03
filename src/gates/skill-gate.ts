@@ -311,33 +311,34 @@ export function scoreSkillLexically(query: string, name: string, description: st
 }
 
 function hasExplicitSkillExclusion(query: string, name: string, description: string): boolean {
-  const queryTokens = skillTokens(query);
-  const candidateTokens = new Set([...skillTokens(name), ...skillTokens(description)]);
   const lowerQuery = query.toLowerCase();
 
-  for (const token of queryTokens) {
-    if (!candidateTokens.has(token)) continue;
-    // A query can name a skill in either language: "no blueprints" carries the
-    // English canonical token, while "不涉及蓝图" carries the CJK surface form. skillTokens()
-    // collapses both to the canonical token, so the exclusion has to be probed
-    // against every surface form that maps to it.
-    const surfaces = [token];
+  // Probe every surface form the candidate can be named by, directly against
+  // the raw query. The exclusion regex itself requires the surface to appear
+  // right after an exclusion word, so probing surfaces that are not in the
+  // query simply fails to match. Going through the raw query (instead of
+  // query tokens) is what keeps "不使用python" working: without whitespace
+  // boundaries a tokenizer merges the CJK negation and the Latin term into a
+  // single token and the exclusion can never be seen.
+  const surfaces = new Set<string>();
+  for (const token of [...skillTokens(name), ...skillTokens(description)]) {
+    surfaces.add(token);
     for (const [alias, canonical] of Object.entries(SKILL_TERM_ALIASES)) {
-      if (canonical === token && alias !== token) surfaces.push(alias);
+      if (canonical === token) surfaces.add(alias);
     }
-    for (const surface of surfaces) {
-      // Tokens and aliases are letters/numbers/CJK only, so they are safe to
-      // interpolate. The trailing s? reverses the singularization skillTokens()
-      // applies to English tokens longer than four characters: without it
-      // "no blueprints" never matched, because the token is "blueprint" while
-      // the query still carries the "s", which broke the look-ahead that demands
-      // whitespace or punctuation right after the token.
-      const exclusion = new RegExp(
-        `(?:不涉及|不使用|不要(?:使用)?|不需要|无需|不包括|排除|无关|not|without|excluding|no)\\s*(?:the\\s*)?${surface}s?(?=$|[\\s,，。；;、])`,
-        "i",
-      );
-      if (exclusion.test(lowerQuery)) return true;
-    }
+  }
+  for (const surface of surfaces) {
+    // Tokens and aliases are letters/numbers/CJK only, so they are safe to
+    // interpolate. The trailing s? reverses the singularization skillTokens()
+    // applies to English tokens longer than four characters: without it
+    // "no blueprints" never matched, because the token is "blueprint" while
+    // the query still carries the "s", which broke the look-ahead that demands
+    // whitespace or punctuation right after the token.
+    const exclusion = new RegExp(
+      `(?:不涉及|不使用|不要(?:使用)?|不需要|无需|不包括|排除|无关|not|without|excluding|no)\\s*(?:the\\s*)?${surface}s?(?=$|[\\s,，。；;、])`,
+      "i",
+    );
+    if (exclusion.test(lowerQuery)) return true;
   }
   return false;
 }
@@ -348,13 +349,20 @@ function skillTokens(text: string): Set<string> {
   const normalized = new Set<string>();
 
   for (const rawToken of tokens) {
-    const token = rawToken.length > 4 && rawToken.endsWith("s") ? rawToken.slice(0, -1) : rawToken;
-    if (token.length < 2 || SKILL_STOP_WORDS.has(token)) continue;
-    const canonical = SKILL_TERM_ALIASES[token];
-    // Long unsegmented Chinese sentences are not useful lexical terms. Their
-    // meaningful parts are recovered by the substring aliases below.
-    if (canonical) normalized.add(canonical);
-    else if (!/[\u3400-\u9fff]/u.test(token) || token.length <= 4) normalized.add(token);
+    // CJK has no whitespace boundaries, so a token that mixes CJK and Latin
+    // (e.g. "不使用python" or "使用python生成") must be re-split into Latin
+    // runs and CJK runs — otherwise the embedded terms are lost entirely.
+    const parts = rawToken.match(/[a-z0-9]+|[\u3400-\u9fff]+/gu) ?? [];
+    for (const part of parts) {
+      const isCjk = /^[\u3400-\u9fff]+$/u.test(part);
+      const token = !isCjk && part.length > 4 && part.endsWith("s") ? part.slice(0, -1) : part;
+      if (token.length < 2 || SKILL_STOP_WORDS.has(token)) continue;
+      const canonical = SKILL_TERM_ALIASES[token];
+      // Long unsegmented Chinese sentences are not useful lexical terms. Their
+      // meaningful parts are recovered by the substring aliases below.
+      if (canonical) normalized.add(canonical);
+      else if (!isCjk || token.length <= 4) normalized.add(token);
+    }
   }
 
   // CJK has no whitespace boundaries, so recover aliases embedded in phrases

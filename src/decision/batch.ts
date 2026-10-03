@@ -22,6 +22,8 @@ export interface BatchDecisionResult {
   status: "ok" | "cached" | "skipped" | "unavailable";
   decisions: Record<string, { choice: string; confidence: number; probabilities?: Record<string, number> }>;
   latencyMs?: number;
+  /** Judgment backend that produced the decisions, matching the other jev tools. */
+  backend?: string;
   reason?: string;
 }
 
@@ -118,7 +120,9 @@ export async function decideBatch(
     { module: "decision", signal, timeoutMs: config.decisionCopilot.timeoutMs },
   );
 
-  if (!result.ok) return { status: "unavailable", decisions: unknownDecisions(questions), reason: result.errorType };
+  if (!result.ok) {
+    return { status: "unavailable", decisions: unknownDecisions(questions), backend: result.backend, reason: result.errorType };
+  }
 
   const decisions: BatchDecisionResult["decisions"] = {};
   questions.forEach((question, index) => {
@@ -139,7 +143,7 @@ export async function decideBatch(
     };
   });
 
-  const batchResult: BatchDecisionResult = { status: "ok", decisions, latencyMs: result.latencyMs };
+  const batchResult: BatchDecisionResult = { status: "ok", decisions, backend: result.backend, latencyMs: result.latencyMs };
   cache.set(key, { turn: currentTurn, result: batchResult });
   return batchResult;
 }

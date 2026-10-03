@@ -139,8 +139,10 @@ export async function rankCandidates(
   const threshold = clampNumber(options?.threshold ?? 0.45, 0, 1, 0.45);
   const maxForJudge = clampNumber(options?.maxForJudge ?? 20, 1, 200, 20);
 
-  const trimmedQuery = (query ?? "").trim();
-  const boundedCandidates = candidates.slice(0, 200);
+  const trimmedQuery = (typeof query === "string" ? query : "").trim();
+  // Callers may pass anything the model produced; a non-array must degrade to
+  // "no candidates" rather than crash on .slice/.map.
+  const boundedCandidates = (Array.isArray(candidates) ? candidates : []).slice(0, 200);
   const base = { query: trimmedQuery, totalCandidates: boundedCandidates.length };
 
   if (trimmedQuery.length === 0 || boundedCandidates.length === 0) {

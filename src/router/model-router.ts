@@ -12,6 +12,8 @@ export interface ModelRouteResult {
   thinking?: string;
   candidateIndex?: number;
   reason?: string;
+  /** Set when the model switched but the requested thinking level could not be applied. */
+  thinkingFailed?: boolean;
 }
 
 /** Normalize a legacy single target or an ordered target list. */
@@ -110,11 +112,15 @@ export async function routeModelDetailed(
     }
 
     let actualThinking: string | undefined;
+    let thinkingFailed = false;
     if (spec.thinking) {
       try {
         pi.setThinkingLevel(spec.thinking);
         actualThinking = pi.getThinkingLevel();
       } catch (err) {
+        // The switch itself succeeded; keep the candidate but make the gap
+        // machine-visible instead of reporting an unqualified success.
+        thinkingFailed = true;
         notifyAutomatic(ctx, tr(
           `Switched to ${spec.provider}/${spec.model}, but could not set thinking level "${spec.thinking}": ${err instanceof Error ? err.message : String(err)}`,
           `已切换到 ${spec.provider}/${spec.model}，但无法设置思考等级“${spec.thinking}”：${err instanceof Error ? err.message : String(err)}`,
@@ -145,7 +151,11 @@ export async function routeModelDetailed(
     return {
       success: true, tier: candidateTier, provider: spec.provider, model: spec.model,
       thinking: actualThinking ?? pi.getThinkingLevel?.(), candidateIndex: index,
-      reason: candidateTier !== effectiveTier ? `upward fallback from ${effectiveTier}` : undefined,
+      ...(thinkingFailed ? { thinkingFailed: true } : {}),
+      reason: [
+        candidateTier !== effectiveTier ? `upward fallback from ${effectiveTier}` : undefined,
+        thinkingFailed ? `thinking level "${spec.thinking}" not applied` : undefined,
+      ].filter(Boolean).join("; ") || undefined,
     };
   }
 

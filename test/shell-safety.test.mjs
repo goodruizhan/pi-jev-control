@@ -492,3 +492,45 @@ test("advisory mode warns on wrapper bypasses without blocking", async () => {
   else process.env.TYPESAFE_API_KEY = originalKey;
   resetClient();
 });
+
+// ── J-B1 / J-G1 regressions (2026-10-04 test report) ────────────────────
+
+test("rm with long flags is dangerous regardless of flag order", () => {
+  const dangerous = [
+    "rm --force -r /tmp/x",
+    "rm -r --force /tmp/x",
+    "rm --force /tmp/x",
+    "rm --recursive /tmp/x",
+    "rm --recursive --force /tmp/x",
+    "echo hi && rm --force -r /tmp/x",
+  ];
+  for (const command of dangerous) {
+    assert.equal(classifyShellCommand(command), "dangerous", `should be dangerous: ${command}`);
+  }
+  // No destructive flag at all stays uncertain.
+  assert.equal(classifyShellCommand("rm foo bar"), "uncertain");
+});
+
+test("heredoc piped into a shell interpreter keeps its body visible", () => {
+  // `cat <<'EOF' … EOF | bash` executes the body as shell code, so masking the
+  // body as inert data hid the dangerous line (J-G1).
+  const piped = [
+    "cat <<'EOF'\nrm -rf /\nEOF\n| bash\n",
+    "cat <<'EOF'\nrm -rf /\nEOF | bash\n",
+    "cat <<'EOF'\nrm -rf /\nEOF\n| sh\n",
+  ];
+  for (const command of piped) {
+    assert.equal(classifyShellCommand(command), "dangerous", `should be dangerous: ${JSON.stringify(command)}`);
+  }
+  // Inert bodies and heredocs followed by a separate dangerous command keep
+  // their previous classification.
+  assert.equal(classifyShellCommand("cat <<'EOF'\nhello\nEOF\n"), "uncertain");
+  assert.equal(classifyShellCommand("cat <<'EOF'\nhello\nEOF\nrm -rf /\n"), "dangerous");
+});
+
+test("extractCommand tolerates null and non-object inputs", () => {
+  assert.equal(extractCommand(null), "");
+  assert.equal(extractCommand(undefined), "");
+  assert.equal(extractCommand(42), "");
+  assert.equal(extractCommand({ command: "pwd" }), "pwd");
+});

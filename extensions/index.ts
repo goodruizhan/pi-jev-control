@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadConfig, getConfigPath, saveLanguage } from "../src/config.js";
+import { loadConfig, getConfigWarnings, getConfigPath, saveLanguage } from "../src/config.js";
 import { normalizeLanguage, onOff, tr, trFor } from "../src/i18n.js";
 import { PLUGIN_VERSION } from "../src/version.js";
 import { ROUTER_MODES, isRouterMode } from "../src/types.js";
@@ -487,6 +487,8 @@ function buildStatus(config: ReturnType<typeof loadConfig>): string {
     `pi-jev-control v${PLUGIN_VERSION}`,
     trFor(config.language, `Judgment: ${jevStatus} (default: ${config.judgment.backend})`, `判断后端：${jevStatus}（默认：${config.judgment.backend}）`),
     ...backendLines,
+    ...getConfigWarnings().map((warning) =>
+      trFor(config.language, `WARNING: ${warning}`, `警告：${warning}`)),
     trFor(config.language, `Language: ${config.language}`, `语言：简体中文（zh-CN）`),
     trFor(config.language, `Timeout: ${config.jev.timeoutMs}ms`, `超时：${config.jev.timeoutMs} 毫秒`),
     trFor(config.language, `Router: ${onOff(config.router.enabled, config.language)} (mode: ${config.router.mode})`, `任务路由：${onOff(config.router.enabled, config.language)}（模式：${config.router.mode}）`),

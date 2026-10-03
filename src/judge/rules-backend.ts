@@ -274,6 +274,10 @@ function maskInertCatHeredocs(command: string): string {
     let end = i + 1;
     while (end < lines.length && (tabsAllowed ? lines[end].replace(/^\t*/, "") : lines[end]).replace(/\r$/, "") !== marker) end++;
     if (end === lines.length) continue;
+    // `cat <<'EOF' … EOF | bash` (pipe on the terminator line or on its own
+    // following line) executes the body as shell code, so the body must stay
+    // visible to the dangerous-pattern scan instead of being masked as data.
+    if (heredocPipedToShell(lines, end, marker)) { i = end; continue; }
     const body = lines.slice(i + 1, end).join("\n");
     // Even an unquoted heredoc can perform shell substitutions.
     if (!match[2] && (/\$\(|`/.test(body))) { i = end; continue; }
@@ -281,6 +285,23 @@ function maskInertCatHeredocs(command: string): string {
     i = end;
   }
   return lines.join("\n");
+}
+
+const PIPE_TO_SHELL_RE = /^[ \t]*\|[ \t]*(?:bash|zsh|ksh|dash|fish|csh|tcsh|sh)\b/;
+
+/**
+ * True when the heredoc terminating at line `end` is piped into a shell
+ * interpreter — either on the terminator line (`EOF | bash`) or as the first
+ * non-empty line after it (`EOF` newline `| bash`).
+ */
+function heredocPipedToShell(lines: string[], end: number, marker: string): boolean {
+  if (PIPE_TO_SHELL_RE.test(lines[end].replace(/\r$/, "").slice(marker.length))) return true;
+  for (let j = end + 1; j < lines.length; j++) {
+    const line = lines[j].replace(/\r$/, "");
+    if (!line.trim()) continue;
+    return PIPE_TO_SHELL_RE.test(line);
+  }
+  return false;
 }
 
 function stripEnvAssignments(segment: string): string {

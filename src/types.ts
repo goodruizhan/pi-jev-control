@@ -498,7 +498,10 @@ export interface SavingsStats {
  * payloads before these patterns are applied.
  */
 export const DANGEROUS_BASH_PATTERNS: RegExp[] = [
-  /(?:^|[;&|]\s*)rm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+/i,
+  // Flag alternation is order-independent: each repetition accepts a short
+  // (-rf, -r, -f) or long (--force, --recursive) destructive flag, so
+  // `rm --force -r /tmp/x` matches even though the short flag is not first.
+  /(?:^|[;&|]\s*)rm\s+(?:(?:-[a-zA-Z]*[rf][a-zA-Z]*|--force|--recursive)\s+)+/i,
   // ── git: working-tree loss and history rewriting ──────────────────
   /(?:^|[;&|]\s*)git\s+reset\s+--hard\b/i,
   // `git clean -fd` is dangerous when it targets the whole working tree;
